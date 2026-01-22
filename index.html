@@ -3,24 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Shutter Freedom</title>
+    <title>Safe The Uyghurs</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #222;
+            background-color: #111;
             font-family: 'Press Start 2P', cursive;
-            touch-action: none; /* Prevents zooming/scrolling on mobile */
+            touch-action: none;
         }
 
         canvas {
             display: block;
             margin: 0 auto;
-            background-color: #e0cda6; /* Sand Color */
+            background-color: #dcb159; /* Richer Sand Color */
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
         }
 
+        /* UI LAYOUT */
         #ui-layer {
             position: absolute;
             top: 0;
@@ -33,22 +35,20 @@
             justify-content: space-between;
         }
 
-        #score-board {
-            color: #222;
-            padding: 10px;
-            font-size: 16px;
-            text-shadow: 1px 1px 0 #fff;
+        #top-ui {
+            padding: 15px;
             display: flex;
             justify-content: space-between;
+            color: #fff;
+            text-shadow: 2px 2px 0 #000;
+            font-size: 14px;
         }
 
+        /* SCREENS */
         #start-screen, #game-over-screen {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(18, 24, 33, 0.95);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -56,72 +56,106 @@
             color: white;
             z-index: 10;
             pointer-events: auto;
+            text-align: center;
         }
 
-        h1 { font-size: 24px; text-align: center; line-height: 1.5; color: #55aaff; }
-        p { font-size: 12px; text-align: center; line-height: 1.5; max-width: 80%; }
+        h1 { 
+            font-size: 28px; 
+            color: #ffcc00; 
+            margin-bottom: 10px; 
+            line-height: 1.4;
+            text-shadow: 4px 4px 0 #8b0000;
+        }
         
+        p { 
+            font-size: 10px; 
+            color: #ccc; 
+            line-height: 1.8; 
+            max-width: 80%; 
+            margin-bottom: 20px;
+        }
+
         .btn {
-            background: #ff5555;
+            background: #d32f2f;
             border: 4px solid #fff;
             padding: 15px 30px;
             color: white;
             font-family: 'Press Start 2P';
-            margin-top: 20px;
+            font-size: 16px;
             cursor: pointer;
+            transition: transform 0.1s;
         }
+        .btn:active { transform: scale(0.95); }
 
-        /* Virtual Controls Visuals (Logic is in JS, this is just overlay guide) */
+        /* CONTROLS OVERLAY */
         .controls-hint {
             display: flex;
             width: 100%;
-            height: 150px;
+            height: 180px;
             pointer-events: none;
             position: absolute;
-            bottom: 20px;
+            bottom: 0;
         }
-        .left-control { width: 50%; border-right: 1px solid rgba(0,0,0,0.1); opacity: 0.3; background: radial-gradient(circle, #fff 10%, transparent 10%); background-size: 50px 50px; background-position: center;}
-        .right-control { width: 50%; display: flex; align-items: center; justify-content: center;}
-        .flash-btn-vis { width: 70px; height: 70px; border-radius: 50%; border: 4px solid white; background: rgba(255,255,255,0.2); }
+        .left-control { 
+            width: 50%; 
+            background: radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 60%);
+        }
+        .right-control { 
+            width: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        .flash-btn-vis { 
+            width: 80px; height: 80px; 
+            border-radius: 50%; 
+            border: 4px solid rgba(255,255,255,0.8); 
+            background: rgba(255,255,255,0.1); 
+            display: flex; align-items: center; justify-content: center;
+        }
+        .flash-icon {
+            width: 40px; height: 30px; border: 2px solid white; background: #fff;
+        }
 
     </style>
 </head>
 <body>
 
     <div id="ui-layer">
-        <div id="score-board">
-            <span>SAVED: <span id="score">0</span></span>
-            <span>LIVES: <span id="lives">3</span></span>
-        </div>
+        <div id="top-ui">
+            <span>SAVED: <span id="score-val">0</span></span>
+            </div>
         <div class="controls-hint">
             <div class="left-control"></div>
-            <div class="right-control"><div class="flash-btn-vis"></div></div>
+            <div class="right-control">
+                <div class="flash-btn-vis"><div class="flash-icon"></div></div>
+            </div>
         </div>
     </div>
 
     <div id="start-screen">
-        <h1>SHUTTER<br>FREEDOM</h1>
-        <p>They are trying to escape.</p>
-        <p>Drag LEFT to Move.</p>
-        <p>Tap RIGHT to Flash Camera.</p>
-        <p>Flash the SWAT to free them.</p>
-        <button class="btn" onclick="startGame()">START</button>
+        <h1>SAFE THE<br>UYGHURS</h1>
+        <p>THEY ARE FLEEING THE CAMP.<br>YOU ARE THEIR ONLY WITNESS.</p>
+        <p style="color: #4fc3f7">CONTROLS:<br>LEFT: Drag to Move<br>RIGHT: Tap to Flash Camera</p>
+        <button class="btn" onclick="startGame()">START MISSION</button>
     </div>
 
     <div id="game-over-screen" style="display: none;">
-        <h1 style="color: #ff5555">GAME OVER</h1>
-        <p>Score: <span id="final-score">0</span></p>
+        <h1 id="go-title" style="color: #ff5555">CAPTURED</h1>
+        <p id="go-reason">The truth was silenced.</p>
+        <p>Total Saved: <span id="final-score">0</span></p>
         <button class="btn" onclick="resetGame()">RETRY</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
 
 <script>
-    // --- SETUP ---
+    /** * GAME ENGINE & LOGIC 
+     */
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     
-    // Responsive Canvas
+    // Fit to screen
     function resize() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
@@ -129,455 +163,575 @@
     window.addEventListener('resize', resize);
     resize();
 
-    // Game Constants
-    const COLORS = {
-        sand: '#e0cda6',
-        building: '#525b68',
-        door: '#2b2b2b',
-        wire: '#222',
-        hero: '#55aaff', // UN Blue
-        flash: 'rgba(255, 255, 255, 0.9)',
-        swat: '#000000',
-        civilian: ['#ff9999', '#99ff99', '#ffff99', '#99ccff', '#ffcc99'] // Varied clothes
+    // --- CONFIGURATION ---
+    const C = {
+        sand: '#dcb159',
+        sandDetail: '#cba048',
+        wall: '#3b434e',
+        wallDark: '#232830',
+        door: '#1a1a1a',
+        wire: '#111',
+        heroSkin: '#ffdbac',
+        heroVest: '#55aaff', // UN Blue
+        heroPants: '#333',
+        swatColor: '#000',
+        swatVest: '#1a1a1a',
+        swatVisor: '#cc0000',
+        flash: 'rgba(255, 255, 255, 0.85)'
     };
 
-    // Game State
-    let gameRunning = false;
-    let score = 0;
-    let lives = 3;
+    // --- STATE VARIABLES ---
+    let gameActive = false;
     let frame = 0;
+    let score = 0;
+    let flashCooldown = 0;
     
+    // Controls
+    let joystick = { on: false, id: null, sx: 0, sy: 0, cx: 0, cy: 0 };
+    let inputs = { dx: 0, dy: 0, flash: false };
+
     // Entities
-    let hero = { x: 0, y: 0, size: 30, speed: 4, dx: 0, dy: 0, facingX: 0, facingY: 1 };
-    let civilians = [];
-    let enemies = [];
+    let hero = { 
+        x: 0, y: 0, speed: 4, 
+        hp: 100, maxHp: 100, 
+        facing: 1, // 1 = right, -1 = left
+        state: 'idle', // idle, run, captured
+        capturedBy: null
+    };
+    
+    let entities = []; // Civilians + Enemies
     let particles = [];
     let flashes = [];
 
-    // Controls
-    let joystick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0 };
-    let flashCooldown = 0;
-
-    // --- INPUT HANDLING ---
-    canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
-    canvas.addEventListener('touchmove', handleTouchMove, {passive: false});
-    canvas.addEventListener('touchend', handleTouchEnd, {passive: false});
-
-    // Keyboard for desktop testing
+    // --- INPUT HANDLERS ---
+    canvas.addEventListener('touchstart', ts, {passive: false});
+    canvas.addEventListener('touchmove', tm, {passive: false});
+    canvas.addEventListener('touchend', te, {passive: false});
+    
+    // PC Debugging
     const keys = {};
-    window.addEventListener('keydown', e => {
-        keys[e.code] = true;
-        if(e.code === 'Space') triggerFlash();
-    });
+    window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='Space') fireFlash(); });
     window.addEventListener('keyup', e => keys[e.code] = false);
 
-    function handleTouchStart(e) {
+    function ts(e) {
         e.preventDefault();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            let t = e.changedTouches[i];
-            if (t.clientX < canvas.width / 2) {
-                // Left side: Joystick
-                joystick.active = true;
-                joystick.id = t.identifier;
-                joystick.startX = t.clientX;
-                joystick.startY = t.clientY;
-                joystick.currX = t.clientX;
-                joystick.currY = t.clientY;
+        for(let t of e.changedTouches) {
+            if(t.clientX < canvas.width/2) {
+                joystick.on = true; joystick.id = t.identifier;
+                joystick.sx = t.clientX; joystick.sy = t.clientY;
+                joystick.cx = t.clientX; joystick.cy = t.clientY;
             } else {
-                // Right side: Flash
-                triggerFlash();
+                fireFlash();
             }
         }
     }
-
-    function handleTouchMove(e) {
+    function tm(e) {
         e.preventDefault();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            let t = e.changedTouches[i];
-            if (joystick.active && t.identifier === joystick.id) {
-                joystick.currX = t.clientX;
-                joystick.currY = t.clientY;
+        for(let t of e.changedTouches) {
+            if(joystick.on && t.identifier === joystick.id) {
+                joystick.cx = t.clientX; joystick.cy = t.clientY;
             }
         }
     }
-
-    function handleTouchEnd(e) {
+    function te(e) {
         e.preventDefault();
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            if (joystick.active && e.changedTouches[i].identifier === joystick.id) {
-                joystick.active = false;
-                joystick.currX = joystick.startX;
-                joystick.currY = joystick.startY;
+        for(let t of e.changedTouches) {
+            if(joystick.on && t.identifier === joystick.id) {
+                joystick.on = false;
             }
         }
     }
 
-    // --- GAME LOGIC ---
-
+    // --- GAME LOOP ---
     function startGame() {
         document.getElementById('start-screen').style.display = 'none';
         document.getElementById('game-over-screen').style.display = 'none';
-        resetEntities();
-        gameRunning = true;
-        loop();
-    }
-
-    function resetGame() {
-        startGame();
-    }
-
-    function resetEntities() {
-        hero.x = canvas.width / 2;
-        hero.y = canvas.height / 2;
+        
+        // Reset State
+        hero.x = canvas.width/2;
+        hero.y = canvas.height - 150;
+        hero.hp = 100;
+        hero.state = 'idle';
+        hero.capturedBy = null;
         score = 0;
-        lives = 3;
-        civilians = [];
-        enemies = [];
+        entities = [];
         particles = [];
-        updateUI();
-    }
-
-    function triggerFlash() {
-        if (!gameRunning || flashCooldown > 0) return;
+        gameActive = true;
         
-        // Visual Flash
-        flashes.push({ x: hero.x, y: hero.y, timer: 10, angle: Math.atan2(hero.facingY, hero.facingX) });
-        
-        // Cooldown
-        flashCooldown = 30; // Frames
-
-        // Collision Logic (Cone)
-        enemies.forEach(enemy => {
-            let dx = enemy.x - hero.x;
-            let dy = enemy.y - hero.y;
-            let dist = Math.sqrt(dx*dx + dy*dy);
-            
-            // If close enough
-            if (dist < 180) {
-                // Calculate angle to enemy
-                let angleToEnemy = Math.atan2(dy, dx);
-                let heroAngle = Math.atan2(hero.facingY, hero.facingX);
-                let angleDiff = angleToEnemy - heroAngle;
-                
-                // Normalize angle
-                while (angleDiff <= -Math.PI) angleDiff += Math.PI*2;
-                while (angleDiff > Math.PI) angleDiff -= Math.PI*2;
-
-                // 90 degree cone (PI/4 on each side) or simple radius check if close
-                if (Math.abs(angleDiff) < 1.0 || dist < 40) {
-                    killEnemy(enemy);
-                }
-            }
-        });
+        requestAnimationFrame(loop);
     }
 
-    function killEnemy(enemy) {
-        enemy.dead = true;
-        score += 10;
-        updateUI();
-        
-        // Create Pixel Explosion
-        for(let i=0; i<15; i++) {
-            particles.push({
-                x: enemy.x,
-                y: enemy.y,
-                vx: (Math.random() - 0.5) * 10,
-                vy: (Math.random() - 0.5) * 10,
-                life: 30,
-                color: '#000'
-            });
-        }
-    }
+    function resetGame() { startGame(); }
 
-    function spawnLogic() {
-        // Spawn Civilians
-        if (frame % 100 === 0) {
-            civilians.push({
-                x: (canvas.width / 2) + (Math.random() * 60 - 30), // From Door
-                y: 100,
-                size: 25,
-                color: COLORS.civilian[Math.floor(Math.random() * COLORS.civilian.length)],
-                state: 'running', // running, captured
-                speed: 1.5 + (Math.random() * 0.5)
-            });
-        }
-
-        // Spawn Swat
-        // Increase difficulty based on score
-        let spawnRate = Math.max(40, 150 - (score/5)); 
-        if (frame % Math.floor(spawnRate) === 0) {
-            enemies.push({
-                x: (canvas.width/2) + (Math.random() * 100 - 50),
-                y: 100,
-                size: 28,
-                speed: 2.5 + (score/500), // Gets faster
-                target: null,
-                state: 'hunting', // hunting, dragging
-                dead: false
-            });
-        }
-    }
-
-    function update() {
-        if (!gameRunning) return;
+    function loop() {
+        if(!gameActive) return;
+        update();
+        draw();
         frame++;
-        if (flashCooldown > 0) flashCooldown--;
+        requestAnimationFrame(loop);
+    }
 
-        // 1. Move Hero
-        // Touch Joystick
-        if (joystick.active) {
-            let dx = joystick.currX - joystick.startX;
-            let dy = joystick.currY - joystick.startY;
-            let dist = Math.sqrt(dx*dx + dy*dy);
-            let angle = Math.atan2(dy, dx);
-            
-            // Normalize speed
-            if (dist > 10) {
-                hero.dx = Math.cos(angle) * hero.speed;
-                hero.dy = Math.sin(angle) * hero.speed;
-                hero.facingX = Math.cos(angle);
-                hero.facingY = Math.sin(angle);
-            } else {
-                hero.dx = 0; hero.dy = 0;
+    // --- LOGIC ---
+    function update() {
+        if(flashCooldown > 0) flashCooldown--;
+
+        // 1. Hero Movement
+        inputs.dx = 0; inputs.dy = 0;
+        
+        if(hero.state !== 'captured') {
+            // Joystick logic
+            if(joystick.on) {
+                let dx = joystick.cx - joystick.sx;
+                let dy = joystick.cy - joystick.sy;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if(dist > 5) {
+                    let angle = Math.atan2(dy, dx);
+                    inputs.dx = Math.cos(angle) * hero.speed;
+                    inputs.dy = Math.sin(angle) * hero.speed;
+                }
+            } 
+            // Keyboard logic
+            else {
+                if(keys['ArrowUp'] || keys['KeyW']) inputs.dy = -hero.speed;
+                if(keys['ArrowDown'] || keys['KeyS']) inputs.dy = hero.speed;
+                if(keys['ArrowLeft'] || keys['KeyA']) inputs.dx = -hero.speed;
+                if(keys['ArrowRight'] || keys['KeyD']) inputs.dx = hero.speed;
             }
-        } else {
-            // Keyboard Fallback
-            hero.dx = 0; hero.dy = 0;
-            if (keys['ArrowUp'] || keys['KeyW']) hero.dy = -hero.speed;
-            if (keys['ArrowDown'] || keys['KeyS']) hero.dy = hero.speed;
-            if (keys['ArrowLeft'] || keys['KeyA']) hero.dx = -hero.speed;
-            if (keys['ArrowRight'] || keys['KeyD']) hero.dx = hero.speed;
+
+            hero.x += inputs.dx;
+            hero.y += inputs.dy;
             
-            if (hero.dx !== 0 || hero.dy !== 0) {
-                hero.facingX = hero.dx;
-                hero.facingY = hero.dy;
-            }
+            // Bounds
+            if(hero.x < 15) hero.x = 15;
+            if(hero.x > canvas.width - 15) hero.x = canvas.width - 15;
+            if(hero.y < 130) hero.y = 130; // Barbed wire limit
+            if(hero.y > canvas.height - 15) hero.y = canvas.height - 15;
+
+            // Direction & State
+            if(inputs.dx > 0) hero.facing = 1;
+            if(inputs.dx < 0) hero.facing = -1;
+            hero.state = (inputs.dx !== 0 || inputs.dy !== 0) ? 'run' : 'idle';
         }
 
-        hero.x += hero.dx;
-        hero.y += hero.dy;
+        // 2. Spawn Logic
+        // Civilians
+        if(frame % 120 === 0) spawnCivilian();
+        // Enemies (Ramp up difficulty)
+        let rate = Math.max(50, 180 - (score/2));
+        if(frame % Math.floor(rate) === 0) spawnSwat();
 
-        // Clamp Hero to Sand Area
-        if (hero.x < 0) hero.x = 0;
-        if (hero.x > canvas.width) hero.x = canvas.width;
-        if (hero.y < 120) hero.y = 120; // Below barbed wire
-        if (hero.y > canvas.height) hero.y = canvas.height;
+        // 3. Entity Updates
+        entities.forEach(e => {
+            if(e.dead) return;
 
-        // 2. Update Civilians
-        civilians.forEach(civ => {
-            if (civ.state === 'running') {
-                civ.y += civ.speed;
-                // Random jitter
-                if (Math.random() < 0.05) civ.x += (Math.random() - 0.5) * 20;
-                
-                // Saved!
-                if (civ.y > canvas.height + 20) {
-                    civ.dead = true; // Mark for removal
-                    score += 100;
-                    updateUI();
+            // --- CIVILIAN LOGIC ---
+            if(e.type === 'civ') {
+                if(e.state === 'run') {
+                    e.y += e.speed;
+                    // Jitter
+                    if(frame % 20 === 0 && Math.random() > 0.5) e.dx = (Math.random()-0.5) * 2;
+                    e.x += e.dx;
+                    
+                    if(e.y > canvas.height + 20) {
+                        e.dead = true;
+                        score += 100;
+                        document.getElementById('score-val').innerText = score;
+                    }
                 }
-            } else if (civ.state === 'captured') {
-                // Moved by enemy
             }
-        });
 
-        // 3. Update Enemies
-        enemies.forEach(enemy => {
-            if (enemy.dead) return;
+            // --- SWAT LOGIC ---
+            if(e.type === 'swat') {
+                // If dragging someone
+                if(e.state === 'drag_civ' || e.state === 'drag_hero') {
+                    // Move back to door
+                    let doorX = canvas.width/2;
+                    let doorY = 100;
+                    let ang = Math.atan2(doorY - e.y, doorX - e.x);
+                    e.x += Math.cos(ang) * (e.speed * 0.7);
+                    e.y += Math.sin(ang) * (e.speed * 0.7);
 
-            if (enemy.state === 'hunting') {
-                // Find nearest free civilian
-                let nearest = null;
-                let minDist = 9999;
-                
-                civilians.forEach(civ => {
-                    if (civ.state === 'running') {
-                        let d = Math.abs(civ.y - enemy.y) + Math.abs(civ.x - enemy.x);
-                        if (d < minDist) {
-                            minDist = d;
-                            nearest = civ;
+                    // Sync Victim Position
+                    if(e.target) {
+                        e.target.x = e.x + (Math.sin(frame*0.2)*5); // dangle effect
+                        e.target.y = e.y + 10;
+                    }
+
+                    // Reached Door
+                    if(e.y < 120) {
+                        e.dead = true;
+                        if(e.target) e.target.dead = true;
+                        if(e.state === 'drag_hero') triggerGameOver("CAPTURED");
+                    }
+                    return; // Skip hunting logic
+                }
+
+                // HUNTING LOGIC
+                let target = null;
+                let minDist = 1000;
+
+                // Priority 1: Check Hero proximity (Aggression)
+                let distToHero = Math.hypot(hero.x - e.x, hero.y - e.y);
+                if(distToHero < 100 && hero.state !== 'captured') {
+                    target = hero;
+                    e.targetType = 'hero';
+                } else {
+                    // Priority 2: Nearest Civilian
+                    e.targetType = 'civ';
+                    entities.forEach(civ => {
+                        if(civ.type === 'civ' && civ.state === 'run') {
+                            let d = Math.hypot(civ.x - e.x, civ.y - e.y);
+                            if(d < minDist) { minDist = d; target = civ; }
+                        }
+                    });
+                }
+
+                if(target) {
+                    let ang = Math.atan2(target.y - e.y, target.x - e.x);
+                    e.x += Math.cos(ang) * e.speed;
+                    e.y += Math.sin(ang) * e.speed;
+                    e.facing = (Math.cos(ang) > 0) ? 1 : -1;
+
+                    // Attack/Grab Collision
+                    if(Math.hypot(target.x - e.x, target.y - e.y) < 20) {
+                        if(e.targetType === 'civ') {
+                            e.state = 'drag_civ';
+                            e.target = target;
+                            target.state = 'captured';
+                        } else if (e.targetType === 'hero') {
+                            // Hit the hero
+                            if(frame % 30 === 0) { // Attack cooldown
+                                hero.hp -= 34; // 3 hits to die
+                                spawnBlood(hero.x, hero.y);
+                                if(hero.hp <= 0) {
+                                    hero.hp = 0;
+                                    hero.state = 'captured';
+                                    e.state = 'drag_hero';
+                                    e.target = hero;
+                                    hero.capturedBy = e;
+                                }
+                            }
                         }
                     }
-                });
-
-                if (nearest) {
-                    // Move towards civilian
-                    let dx = nearest.x - enemy.x;
-                    let dy = nearest.y - enemy.y;
-                    let angle = Math.atan2(dy, dx);
-                    enemy.x += Math.cos(angle) * enemy.speed;
-                    enemy.y += Math.sin(angle) * enemy.speed;
-
-                    // Capture collision
-                    let dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < 20) {
-                        enemy.state = 'dragging';
-                        nearest.state = 'captured';
-                        enemy.target = nearest;
-                    }
                 } else {
-                    // No targets, patrol down then up
-                    enemy.y += 1; 
-                }
-            } else if (enemy.state === 'dragging') {
-                // Drag back to building
-                let dx = (canvas.width/2) - enemy.x;
-                let dy = 100 - enemy.y; // Door Y
-                let angle = Math.atan2(dy, dx);
-                enemy.x += Math.cos(angle) * (enemy.speed * 0.8); // Dragging is slower
-                enemy.y += Math.sin(angle) * (enemy.speed * 0.8);
-
-                // Lock civilian to enemy
-                if (enemy.target) {
-                    enemy.target.x = enemy.x;
-                    enemy.target.y = enemy.y + 10;
-                }
-
-                // If reached door
-                if (enemy.y < 110) {
-                    enemy.dead = true; // Entered building
-                    if (enemy.target) enemy.target.dead = true;
-                    lives--;
-                    updateUI();
-                    if (lives <= 0) gameOver();
+                    // Patrol
+                    e.y += 1;
                 }
             }
         });
 
-        // Cleanup Dead entities
-        civilians = civilians.filter(c => !c.dead);
-        enemies = enemies.filter(e => !e.dead);
-
-        spawnLogic();
-
+        // Cleanup
+        entities = entities.filter(e => !e.dead);
+        
         // Particles
-        particles.forEach(p => {
-            p.x += p.vx;
-            p.y += p.vy;
-            p.life--;
-        });
+        particles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life--; });
         particles = particles.filter(p => p.life > 0);
     }
 
-    function draw() {
-        // Clear
-        ctx.fillStyle = COLORS.sand;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // --- ACTIONS ---
+    function fireFlash() {
+        if(!gameActive || flashCooldown > 0 || hero.state === 'captured') return;
+        
+        flashCooldown = 40;
+        
+        // Spawn Visual Flash
+        flashes.push({x: hero.x, y: hero.y, life: 5, facing: hero.facing});
 
-        // --- DRAW ENVIRONMENT ---
-        // Building
-        ctx.fillStyle = COLORS.building;
+        // Check Hits (Cone)
+        entities.forEach(e => {
+            if(e.type === 'swat') {
+                let dx = e.x - hero.x;
+                let dy = e.y - hero.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // Direction check
+                let validDir = false;
+                if(hero.facing === 1 && dx > 0) validDir = true;
+                if(hero.facing === -1 && dx < 0) validDir = true;
+                // Vertical tolerance
+                if(Math.abs(dx) < 20) validDir = true; // Close enough
+
+                if(dist < 150 && validDir) {
+                    // HIT!
+                    e.dead = true;
+                    score += 50;
+                    document.getElementById('score-val').innerText = score;
+                    spawnPixelExplosion(e.x, e.y);
+
+                    // Free victim if dragging
+                    if(e.target) {
+                        e.target.state = (e.target === hero) ? 'idle' : 'run';
+                        if(e.target === hero) hero.capturedBy = null;
+                        e.target = null;
+                    }
+                }
+            }
+        });
+    }
+
+    function spawnCivilian() {
+        entities.push({
+            type: 'civ',
+            x: canvas.width/2 + (Math.random()*40-20),
+            y: 110,
+            color: `hsl(${Math.random()*360}, 70%, 50%)`,
+            speed: 1.5 + Math.random(),
+            dx: 0,
+            state: 'run',
+            dead: false,
+            animOffset: Math.random() * 10
+        });
+    }
+
+    function spawnSwat() {
+        entities.push({
+            type: 'swat',
+            x: canvas.width/2 + (Math.random()*60-30),
+            y: 110,
+            speed: 2.2 + (score/1000),
+            state: 'hunt',
+            dead: false,
+            target: null,
+            facing: 1,
+            animOffset: Math.random() * 10
+        });
+    }
+
+    function spawnPixelExplosion(x, y) {
+        for(let i=0; i<20; i++) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10,
+                color: '#000', life: 20, size: 4
+            });
+        }
+    }
+
+    function spawnBlood(x, y) {
+        for(let i=0; i<10; i++) {
+            particles.push({
+                x: x, y: y - 10,
+                vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5,
+                color: '#ff0000', life: 30, size: 3
+            });
+        }
+    }
+
+    function triggerGameOver(reason) {
+        gameActive = false;
+        document.getElementById('go-title').innerText = reason;
+        document.getElementById('go-reason').innerText = reason === "CAPTURED" ? "You were taken to the camp." : "You were killed in action.";
+        document.getElementById('final-score').innerText = score;
+        document.getElementById('game-over-screen').style.display = 'flex';
+    }
+
+    // --- DRAWING ---
+    function draw() {
+        // Background
+        ctx.fillStyle = C.sand;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Sand Texture (Dots)
+        ctx.fillStyle = C.sandDetail;
+        for(let i=0; i<canvas.width; i+=40) {
+            for(let j=130; j<canvas.height; j+=40) {
+                if((i+j)%3===0) ctx.fillRect(i, j, 4, 4);
+            }
+        }
+
+        // --- TOP AREA ---
+        ctx.fillStyle = C.wall;
         ctx.fillRect(0, 0, canvas.width, 120);
         
         // Door
-        ctx.fillStyle = COLORS.door;
-        ctx.fillRect((canvas.width/2)-40, 60, 80, 60);
-        
-        // Barbed Wire Line
-        ctx.strokeStyle = COLORS.wire;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(0, 120);
-        ctx.lineTo(canvas.width, 120);
-        ctx.stroke();
-        
-        // Wire Crosses
-        for(let i=0; i<canvas.width; i+=40) {
-            ctx.beginPath();
-            ctx.moveTo(i, 115); ctx.lineTo(i+10, 125);
-            ctx.moveTo(i+10, 115); ctx.lineTo(i, 125);
-            ctx.stroke();
-        }
+        ctx.fillStyle = C.door;
+        ctx.fillRect(canvas.width/2 - 30, 70, 60, 50);
 
-        // --- DRAW SHADOWS ---
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        [...civilians, ...enemies, hero].forEach(e => {
+        // Barbed Wire
+        ctx.strokeStyle = C.wire;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Coils
+        for(let i=-20; i<canvas.width; i+=15) {
+            ctx.arc(i, 120, 10, 0, Math.PI*2);
+        }
+        ctx.stroke();
+
+        // Shadows
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        entities.forEach(e => {
             if(e.dead) return;
             ctx.beginPath();
-            ctx.ellipse(e.x, e.y + e.size/2, e.size/2, e.size/4, 0, 0, Math.PI*2);
+            ctx.ellipse(e.x, e.y, 10, 4, 0, 0, Math.PI*2);
             ctx.fill();
         });
+        ctx.beginPath();
+        ctx.ellipse(hero.x, hero.y, 12, 5, 0, 0, Math.PI*2);
+        ctx.fill();
 
-        // --- DRAW ENTITIES ---
-        
-        // Civilians
-        civilians.forEach(c => {
-            ctx.fillStyle = c.color;
-            ctx.fillRect(c.x - c.size/2, c.y - c.size/2, c.size, c.size);
-            // Eyes
-            ctx.fillStyle = 'black';
-            ctx.fillRect(c.x - 5, c.y - 5, 2, 5);
-            ctx.fillRect(c.x + 3, c.y - 5, 2, 5);
-        });
-
-        // Enemies (SWAT)
-        enemies.forEach(e => {
-            ctx.fillStyle = COLORS.swat;
-            ctx.fillRect(e.x - e.size/2, e.y - e.size/2, e.size, e.size);
-            // Red Visor
-            ctx.fillStyle = 'red';
-            ctx.fillRect(e.x - 10, e.y - 8, 20, 4);
+        // Entities
+        entities.forEach(e => {
+            if(e.dead) return;
+            if(e.type === 'civ') drawCivilian(e);
+            if(e.type === 'swat') drawSwat(e);
         });
 
         // Hero
-        ctx.save();
-        ctx.translate(hero.x, hero.y);
-        ctx.fillStyle = COLORS.hero;
-        ctx.fillRect(-hero.size/2, -hero.size/2, hero.size, hero.size);
-        // Camera Lens
-        ctx.fillStyle = '#222';
-        ctx.beginPath();
-        ctx.arc(0, 0, 8, 0, Math.PI*2);
-        ctx.fill();
-        ctx.fillStyle = '#add8e6';
-        ctx.beginPath();
-        ctx.arc(2, -2, 3, 0, Math.PI*2);
-        ctx.fill();
-        ctx.restore();
+        drawHero();
 
-        // Flash Effect (Cone)
+        // Flash Effect
         flashes.forEach(f => {
-            if (f.timer > 0) {
-                ctx.save();
-                ctx.translate(f.x, f.y);
-                ctx.rotate(f.angle);
-                ctx.fillStyle = COLORS.flash;
-                ctx.beginPath();
-                ctx.moveTo(0,0);
-                ctx.lineTo(200, -60);
-                ctx.lineTo(200, 60);
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
-                f.timer--;
+            ctx.save();
+            ctx.translate(f.x, f.y - 15);
+            ctx.fillStyle = C.flash;
+            ctx.globalAlpha = f.life / 5;
+            
+            ctx.beginPath();
+            ctx.moveTo(0,0);
+            if(f.facing === 1) { // Right
+                ctx.lineTo(200, -80); ctx.lineTo(200, 80);
+            } else { // Left
+                ctx.lineTo(-200, -80); ctx.lineTo(-200, 80);
             }
+            ctx.fill();
+            ctx.restore();
+            f.life--;
         });
-        flashes = flashes.filter(f => f.timer > 0);
+        flashes = flashes.filter(f => f.life > 0);
 
         // Particles
         particles.forEach(p => {
             ctx.fillStyle = p.color;
-            ctx.fillRect(p.x, p.y, 4, 4);
+            ctx.fillRect(p.x, p.y, p.size, p.size);
         });
     }
 
-    function loop() {
-        if (gameRunning) {
-            update();
-            draw();
-            requestAnimationFrame(loop);
+    // --- SPRITE PAINTERS ---
+    
+    // Helper to draw limbs based on running phase
+    function getLimbPos(entity) {
+        if(entity.state === 'run' || entity.state === 'hunt') {
+            let t = (frame + entity.animOffset) * 0.3;
+            return Math.sin(t) * 8;
         }
+        return 0;
     }
 
-    function updateUI() {
-        document.getElementById('score').innerText = score;
-        document.getElementById('lives').innerText = lives;
+    function drawCivilian(c) {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        
+        let swing = getLimbPos(c);
+
+        // Legs
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(-4, -10); ctx.lineTo(-4 + swing, 0);
+        ctx.moveTo(4, -10); ctx.lineTo(4 - swing, 0);
+        ctx.stroke();
+
+        // Body
+        ctx.fillStyle = c.color;
+        ctx.fillRect(-7, -22, 14, 14);
+
+        // Head
+        ctx.fillStyle = C.heroSkin; // Generic skin
+        ctx.fillRect(-5, -30, 10, 8);
+
+        // Arms (swinging opposite to legs)
+        ctx.fillStyle = c.color;
+        ctx.fillRect(-10, -22 + swing, 3, 10);
+        ctx.fillRect(7, -22 - swing, 3, 10);
+
+        ctx.restore();
     }
 
-    function gameOver() {
-        gameRunning = false;
-        document.getElementById('final-score').innerText = score;
-        document.getElementById('game-over-screen').style.display = 'flex';
+    function drawSwat(s) {
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        let f = s.facing;
+        let swing = getLimbPos(s);
+
+        // Legs (Black)
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(-4, -10); ctx.lineTo(-4 + swing, 0);
+        ctx.moveTo(4, -10); ctx.lineTo(4 - swing, 0);
+        ctx.stroke();
+
+        // Body (Armor)
+        ctx.fillStyle = C.swatVest;
+        ctx.fillRect(-8, -24, 16, 16); // Bulky
+
+        // Head (Helmet)
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(0, -28, 7, 0, Math.PI*2);
+        ctx.fill();
+
+        // Visor (Red Eye)
+        ctx.fillStyle = C.swatVisor;
+        ctx.fillRect(f*2, -30, f*6, 3);
+
+        // Baton/Weapon
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(f*8, -18); ctx.lineTo(f*8, -8 - swing);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    function drawHero() {
+        if(hero.hp <= 0 && hero.state !== 'captured') return; // Dead and not being dragged yet
+        
+        ctx.save();
+        ctx.translate(hero.x, hero.y);
+        let f = hero.facing;
+        let swing = 0;
+        if(hero.state === 'run') swing = Math.sin(frame*0.3)*8;
+
+        // Health Bar
+        if(hero.hp < 100) {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(-15, -50, 30, 5);
+            ctx.fillStyle = '#0f0';
+            ctx.fillRect(-15, -50, 30 * (hero.hp/100), 5);
+        }
+
+        // Legs
+        ctx.strokeStyle = C.heroPants;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(-4, -10); ctx.lineTo(-4 + swing, 0);
+        ctx.moveTo(4, -10); ctx.lineTo(4 - swing, 0);
+        ctx.stroke();
+
+        // Body (UN Vest)
+        ctx.fillStyle = '#fff'; // Shirt
+        ctx.fillRect(-7, -22, 14, 14);
+        ctx.fillStyle = C.heroVest; // Vest
+        ctx.fillRect(-8, -22, 16, 10);
+
+        // Head
+        ctx.fillStyle = C.heroSkin;
+        ctx.fillRect(-5, -32, 10, 10);
+        // Hair
+        ctx.fillStyle = '#444';
+        ctx.fillRect(-6, -35, 12, 4);
+
+        // Camera
+        ctx.fillStyle = '#111';
+        ctx.fillRect(f*4, -20, 8, 6); // Body
+        ctx.fillStyle = '#eee'; // Lens
+        ctx.beginPath();
+        ctx.arc(f*12, -17, 3, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.restore();
     }
 
 </script>
