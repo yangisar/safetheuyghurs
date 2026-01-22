@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Shutter Freedom</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #222;
+            font-family: 'Press Start 2P', cursive;
+            touch-action: none; /* Prevents zooming/scrolling on mobile */
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #e0cda6; /* Sand Color */
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #score-board {
+            color: #222;
+            padding: 10px;
+            font-size: 16px;
+            text-shadow: 1px 1px 0 #fff;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        h1 { font-size: 24px; text-align: center; line-height: 1.5; color: #55aaff; }
+        p { font-size: 12px; text-align: center; line-height: 1.5; max-width: 80%; }
+        
+        .btn {
+            background: #ff5555;
+            border: 4px solid #fff;
+            padding: 15px 30px;
+            color: white;
+            font-family: 'Press Start 2P';
+            margin-top: 20px;
+            cursor: pointer;
+        }
+
+        /* Virtual Controls Visuals (Logic is in JS, this is just overlay guide) */
+        .controls-hint {
+            display: flex;
+            width: 100%;
+            height: 150px;
+            pointer-events: none;
+            position: absolute;
+            bottom: 20px;
+        }
+        .left-control { width: 50%; border-right: 1px solid rgba(0,0,0,0.1); opacity: 0.3; background: radial-gradient(circle, #fff 10%, transparent 10%); background-size: 50px 50px; background-position: center;}
+        .right-control { width: 50%; display: flex; align-items: center; justify-content: center;}
+        .flash-btn-vis { width: 70px; height: 70px; border-radius: 50%; border: 4px solid white; background: rgba(255,255,255,0.2); }
+
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="score-board">
+            <span>SAVED: <span id="score">0</span></span>
+            <span>LIVES: <span id="lives">3</span></span>
+        </div>
+        <div class="controls-hint">
+            <div class="left-control"></div>
+            <div class="right-control"><div class="flash-btn-vis"></div></div>
+        </div>
+    </div>
+
+    <div id="start-screen">
+        <h1>SHUTTER<br>FREEDOM</h1>
+        <p>They are trying to escape.</p>
+        <p>Drag LEFT to Move.</p>
+        <p>Tap RIGHT to Flash Camera.</p>
+        <p>Flash the SWAT to free them.</p>
+        <button class="btn" onclick="startGame()">START</button>
+    </div>
+
+    <div id="game-over-screen" style="display: none;">
+        <h1 style="color: #ff5555">GAME OVER</h1>
+        <p>Score: <span id="final-score">0</span></p>
+        <button class="btn" onclick="resetGame()">RETRY</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    // --- SETUP ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Responsive Canvas
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Game Constants
+    const COLORS = {
+        sand: '#e0cda6',
+        building: '#525b68',
+        door: '#2b2b2b',
+        wire: '#222',
+        hero: '#55aaff', // UN Blue
+        flash: 'rgba(255, 255, 255, 0.9)',
+        swat: '#000000',
+        civilian: ['#ff9999', '#99ff99', '#ffff99', '#99ccff', '#ffcc99'] // Varied clothes
+    };
+
+    // Game State
+    let gameRunning = false;
+    let score = 0;
+    let lives = 3;
+    let frame = 0;
+    
+    // Entities
+    let hero = { x: 0, y: 0, size: 30, speed: 4, dx: 0, dy: 0, facingX: 0, facingY: 1 };
+    let civilians = [];
+    let enemies = [];
+    let particles = [];
+    let flashes = [];
+
+    // Controls
+    let joystick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0 };
+    let flashCooldown = 0;
+
+    // --- INPUT HANDLING ---
+    canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
+    canvas.addEventListener('touchmove', handleTouchMove, {passive: false});
+    canvas.addEventListener('touchend', handleTouchEnd, {passive: false});
+
+    // Keyboard for desktop testing
+    const keys = {};
+    window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        if(e.code === 'Space') triggerFlash();
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function handleTouchStart(e) {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            let t = e.changedTouches[i];
+            if (t.clientX < canvas.width / 2) {
+                // Left side: Joystick
+                joystick.active = true;
+                joystick.id = t.identifier;
+                joystick.startX = t.clientX;
+                joystick.startY = t.clientY;
+                joystick.currX = t.clientX;
+                joystick.currY = t.clientY;
+            } else {
+                // Right side: Flash
+                triggerFlash();
+            }
+        }
+    }
+
+    function handleTouchMove(e) {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            let t = e.changedTouches[i];
+            if (joystick.active && t.identifier === joystick.id) {
+                joystick.currX = t.clientX;
+                joystick.currY = t.clientY;
+            }
+        }
+    }
+
+    function handleTouchEnd(e) {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (joystick.active && e.changedTouches[i].identifier === joystick.id) {
+                joystick.active = false;
+                joystick.currX = joystick.startX;
+                joystick.currY = joystick.startY;
+            }
+        }
+    }
+
+    // --- GAME LOGIC ---
+
+    function startGame() {
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('game-over-screen').style.display = 'none';
+        resetEntities();
+        gameRunning = true;
+        loop();
+    }
+
+    function resetGame() {
+        startGame();
+    }
+
+    function resetEntities() {
+        hero.x = canvas.width / 2;
+        hero.y = canvas.height / 2;
+        score = 0;
+        lives = 3;
+        civilians = [];
+        enemies = [];
+        particles = [];
+        updateUI();
+    }
+
+    function triggerFlash() {
+        if (!gameRunning || flashCooldown > 0) return;
+        
+        // Visual Flash
+        flashes.push({ x: hero.x, y: hero.y, timer: 10, angle: Math.atan2(hero.facingY, hero.facingX) });
+        
+        // Cooldown
+        flashCooldown = 30; // Frames
+
+        // Collision Logic (Cone)
+        enemies.forEach(enemy => {
+            let dx = enemy.x - hero.x;
+            let dy = enemy.y - hero.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // If close enough
+            if (dist < 180) {
+                // Calculate angle to enemy
+                let angleToEnemy = Math.atan2(dy, dx);
+                let heroAngle = Math.atan2(hero.facingY, hero.facingX);
+                let angleDiff = angleToEnemy - heroAngle;
+                
+                // Normalize angle
+                while (angleDiff <= -Math.PI) angleDiff += Math.PI*2;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI*2;
+
+                // 90 degree cone (PI/4 on each side) or simple radius check if close
+                if (Math.abs(angleDiff) < 1.0 || dist < 40) {
+                    killEnemy(enemy);
+                }
+            }
+        });
+    }
+
+    function killEnemy(enemy) {
+        enemy.dead = true;
+        score += 10;
+        updateUI();
+        
+        // Create Pixel Explosion
+        for(let i=0; i<15; i++) {
+            particles.push({
+                x: enemy.x,
+                y: enemy.y,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 30,
+                color: '#000'
+            });
+        }
+    }
+
+    function spawnLogic() {
+        // Spawn Civilians
+        if (frame % 100 === 0) {
+            civilians.push({
+                x: (canvas.width / 2) + (Math.random() * 60 - 30), // From Door
+                y: 100,
+                size: 25,
+                color: COLORS.civilian[Math.floor(Math.random() * COLORS.civilian.length)],
+                state: 'running', // running, captured
+                speed: 1.5 + (Math.random() * 0.5)
+            });
+        }
+
+        // Spawn Swat
+        // Increase difficulty based on score
+        let spawnRate = Math.max(40, 150 - (score/5)); 
+        if (frame % Math.floor(spawnRate) === 0) {
+            enemies.push({
+                x: (canvas.width/2) + (Math.random() * 100 - 50),
+                y: 100,
+                size: 28,
+                speed: 2.5 + (score/500), // Gets faster
+                target: null,
+                state: 'hunting', // hunting, dragging
+                dead: false
+            });
+        }
+    }
+
+    function update() {
+        if (!gameRunning) return;
+        frame++;
+        if (flashCooldown > 0) flashCooldown--;
+
+        // 1. Move Hero
+        // Touch Joystick
+        if (joystick.active) {
+            let dx = joystick.currX - joystick.startX;
+            let dy = joystick.currY - joystick.startY;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            let angle = Math.atan2(dy, dx);
+            
+            // Normalize speed
+            if (dist > 10) {
+                hero.dx = Math.cos(angle) * hero.speed;
+                hero.dy = Math.sin(angle) * hero.speed;
+                hero.facingX = Math.cos(angle);
+                hero.facingY = Math.sin(angle);
+            } else {
+                hero.dx = 0; hero.dy = 0;
+            }
+        } else {
+            // Keyboard Fallback
+            hero.dx = 0; hero.dy = 0;
+            if (keys['ArrowUp'] || keys['KeyW']) hero.dy = -hero.speed;
+            if (keys['ArrowDown'] || keys['KeyS']) hero.dy = hero.speed;
+            if (keys['ArrowLeft'] || keys['KeyA']) hero.dx = -hero.speed;
+            if (keys['ArrowRight'] || keys['KeyD']) hero.dx = hero.speed;
+            
+            if (hero.dx !== 0 || hero.dy !== 0) {
+                hero.facingX = hero.dx;
+                hero.facingY = hero.dy;
+            }
+        }
+
+        hero.x += hero.dx;
+        hero.y += hero.dy;
+
+        // Clamp Hero to Sand Area
+        if (hero.x < 0) hero.x = 0;
+        if (hero.x > canvas.width) hero.x = canvas.width;
+        if (hero.y < 120) hero.y = 120; // Below barbed wire
+        if (hero.y > canvas.height) hero.y = canvas.height;
+
+        // 2. Update Civilians
+        civilians.forEach(civ => {
+            if (civ.state === 'running') {
+                civ.y += civ.speed;
+                // Random jitter
+                if (Math.random() < 0.05) civ.x += (Math.random() - 0.5) * 20;
+                
+                // Saved!
+                if (civ.y > canvas.height + 20) {
+                    civ.dead = true; // Mark for removal
+                    score += 100;
+                    updateUI();
+                }
+            } else if (civ.state === 'captured') {
+                // Moved by enemy
+            }
+        });
+
+        // 3. Update Enemies
+        enemies.forEach(enemy => {
+            if (enemy.dead) return;
+
+            if (enemy.state === 'hunting') {
+                // Find nearest free civilian
+                let nearest = null;
+                let minDist = 9999;
+                
+                civilians.forEach(civ => {
+                    if (civ.state === 'running') {
+                        let d = Math.abs(civ.y - enemy.y) + Math.abs(civ.x - enemy.x);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearest = civ;
+                        }
+                    }
+                });
+
+                if (nearest) {
+                    // Move towards civilian
+                    let dx = nearest.x - enemy.x;
+                    let dy = nearest.y - enemy.y;
+                    let angle = Math.atan2(dy, dx);
+                    enemy.x += Math.cos(angle) * enemy.speed;
+                    enemy.y += Math.sin(angle) * enemy.speed;
+
+                    // Capture collision
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 20) {
+                        enemy.state = 'dragging';
+                        nearest.state = 'captured';
+                        enemy.target = nearest;
+                    }
+                } else {
+                    // No targets, patrol down then up
+                    enemy.y += 1; 
+                }
+            } else if (enemy.state === 'dragging') {
+                // Drag back to building
+                let dx = (canvas.width/2) - enemy.x;
+                let dy = 100 - enemy.y; // Door Y
+                let angle = Math.atan2(dy, dx);
+                enemy.x += Math.cos(angle) * (enemy.speed * 0.8); // Dragging is slower
+                enemy.y += Math.sin(angle) * (enemy.speed * 0.8);
+
+                // Lock civilian to enemy
+                if (enemy.target) {
+                    enemy.target.x = enemy.x;
+                    enemy.target.y = enemy.y + 10;
+                }
+
+                // If reached door
+                if (enemy.y < 110) {
+                    enemy.dead = true; // Entered building
+                    if (enemy.target) enemy.target.dead = true;
+                    lives--;
+                    updateUI();
+                    if (lives <= 0) gameOver();
+                }
+            }
+        });
+
+        // Cleanup Dead entities
+        civilians = civilians.filter(c => !c.dead);
+        enemies = enemies.filter(e => !e.dead);
+
+        spawnLogic();
+
+        // Particles
+        particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+        });
+        particles = particles.filter(p => p.life > 0);
+    }
+
+    function draw() {
+        // Clear
+        ctx.fillStyle = COLORS.sand;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // --- DRAW ENVIRONMENT ---
+        // Building
+        ctx.fillStyle = COLORS.building;
+        ctx.fillRect(0, 0, canvas.width, 120);
+        
+        // Door
+        ctx.fillStyle = COLORS.door;
+        ctx.fillRect((canvas.width/2)-40, 60, 80, 60);
+        
+        // Barbed Wire Line
+        ctx.strokeStyle = COLORS.wire;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, 120);
+        ctx.lineTo(canvas.width, 120);
+        ctx.stroke();
+        
+        // Wire Crosses
+        for(let i=0; i<canvas.width; i+=40) {
+            ctx.beginPath();
+            ctx.moveTo(i, 115); ctx.lineTo(i+10, 125);
+            ctx.moveTo(i+10, 115); ctx.lineTo(i, 125);
+            ctx.stroke();
+        }
+
+        // --- DRAW SHADOWS ---
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        [...civilians, ...enemies, hero].forEach(e => {
+            if(e.dead) return;
+            ctx.beginPath();
+            ctx.ellipse(e.x, e.y + e.size/2, e.size/2, e.size/4, 0, 0, Math.PI*2);
+            ctx.fill();
+        });
+
+        // --- DRAW ENTITIES ---
+        
+        // Civilians
+        civilians.forEach(c => {
+            ctx.fillStyle = c.color;
+            ctx.fillRect(c.x - c.size/2, c.y - c.size/2, c.size, c.size);
+            // Eyes
+            ctx.fillStyle = 'black';
+            ctx.fillRect(c.x - 5, c.y - 5, 2, 5);
+            ctx.fillRect(c.x + 3, c.y - 5, 2, 5);
+        });
+
+        // Enemies (SWAT)
+        enemies.forEach(e => {
+            ctx.fillStyle = COLORS.swat;
+            ctx.fillRect(e.x - e.size/2, e.y - e.size/2, e.size, e.size);
+            // Red Visor
+            ctx.fillStyle = 'red';
+            ctx.fillRect(e.x - 10, e.y - 8, 20, 4);
+        });
+
+        // Hero
+        ctx.save();
+        ctx.translate(hero.x, hero.y);
+        ctx.fillStyle = COLORS.hero;
+        ctx.fillRect(-hero.size/2, -hero.size/2, hero.size, hero.size);
+        // Camera Lens
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#add8e6';
+        ctx.beginPath();
+        ctx.arc(2, -2, 3, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+
+        // Flash Effect (Cone)
+        flashes.forEach(f => {
+            if (f.timer > 0) {
+                ctx.save();
+                ctx.translate(f.x, f.y);
+                ctx.rotate(f.angle);
+                ctx.fillStyle = COLORS.flash;
+                ctx.beginPath();
+                ctx.moveTo(0,0);
+                ctx.lineTo(200, -60);
+                ctx.lineTo(200, 60);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+                f.timer--;
+            }
+        });
+        flashes = flashes.filter(f => f.timer > 0);
+
+        // Particles
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x, p.y, 4, 4);
+        });
+    }
+
+    function loop() {
+        if (gameRunning) {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+    }
+
+    function updateUI() {
+        document.getElementById('score').innerText = score;
+        document.getElementById('lives').innerText = lives;
+    }
+
+    function gameOver() {
+        gameRunning = false;
+        document.getElementById('final-score').innerText = score;
+        document.getElementById('game-over-screen').style.display = 'flex';
+    }
+
+</script>
+</body>
+</html>
