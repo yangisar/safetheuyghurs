@@ -294,8 +294,12 @@
             // Perp can pass if holding someone near center
             if(hero.holding && Math.abs(hero.x - canvas.width/2) < 60) {
                 if(hero.y < 120) {
+                    let type = hero.holding.type; // Check if Civ or WB
                     spawnFloatText(hero.x, hero.y, "DETAINED", "#fff");
-                    score++; stats.detained++;
+                    score++; 
+                    if(type === 'civ') stats.detained++;
+                    else if(type === 'wb') stats.silenced++;
+                    
                     hero.holding.dead = true; hero.holding = null; hero.y = WIRE_Y+10;
                 }
             } else {
@@ -342,11 +346,13 @@
 
             // ENEMY SWAT (WB Mode - AI)
             if(e.type === 'swat' && e.team === 'enemy') {
-                // LOGIC: Only target hero if Flash is used, otherwise catch Civs
                 let target = null;
                 let action = 'idle';
 
-                if(hero.flashTimer > 0) {
+                // AGGRESSIVE LOGIC: Attack player if close, OR catch civs
+                let distToHero = dist(e, hero);
+                
+                if (distToHero < 120 || hero.flashTimer > 0) {
                     target = hero;
                     action = 'attack';
                 } else {
@@ -463,7 +469,8 @@
             cooldown = 25; hero.flashTimer = 8;
             entities.forEach(t => {
                 let diff = normalizeAngle(Math.atan2(t.y-hero.y, t.x-hero.x) - hero.angle);
-                if(dist(hero,t)<200 && Math.abs(diff)<0.6) {
+                // REDUCED CONE: dist 200->100, angle 0.6->0.4
+                if(dist(hero,t)<100 && Math.abs(diff)<0.4) {
                     if(t.type==='civ' && t.state==='stunned') {
                         t.state = 'run'; t.beingDragged = false; spawnFloatText(t.x, t.y, "FREED!", "#0f0");
                     }
@@ -478,9 +485,17 @@
             cooldown = 20; hero.swingTimer = 10;
             entities.forEach(t => {
                 if(dist(hero,t)<60 && !t.dead) {
+                    // Kick WB
                     if(t.type==='wb') {
-                        t.dead = true; spawnBlood(t.x, t.y); score++; stats.silenced++; spawnFloatText(t.x, t.y, "SILENCED", "#f00");
+                        spawnBlood(t.x, t.y);
+                        t.hits = (t.hits || 0) + 1;
+                        if(t.hits >= 3) {
+                            t.dead = true; spawnExplosion(t.x, t.y); score++; stats.silenced++; spawnFloatText(t.x, t.y, "SILENCED", "#f00");
+                        } else {
+                            t.state = 'stunned'; spawnFloatText(t.x, t.y, "STUNNED", "#ff0");
+                        }
                     }
+                    // Kick Civ
                     if(t.type==='civ') {
                         spawnBlood(t.x, t.y);
                         t.hits = (t.hits || 0) + 1;
@@ -493,7 +508,8 @@
         else if(a==='grab') {
             if(hero.holding) { hero.holding.state='run'; hero.holding.beingDragged=false; hero.holding=null; }
             else {
-                let t = entities.find(e => e.type==='civ' && dist(hero,e)<50 && e.y>=WIRE_Y && !e.beingDragged);
+                // Can grab civ OR stunned WB
+                let t = entities.find(e => (e.type==='civ' || (e.type==='wb' && e.state==='stunned')) && dist(hero,e)<50 && e.y>=WIRE_Y && !e.beingDragged);
                 if(t) { hero.holding = t; spawnFloatText(hero.x, hero.y, "GRAB", "#fff"); }
             }
         }
@@ -605,8 +621,8 @@
 
     function drawFlash(c, x, y, ang) {
         c.save(); c.translate(x, y-15); c.rotate(ang);
-        let grd = c.createLinearGradient(0, 0, 200, 0); grd.addColorStop(0, "rgba(255,255,255,0.8)"); grd.addColorStop(1, "rgba(255,255,255,0)");
-        c.fillStyle = grd; c.beginPath(); c.moveTo(0, 0); c.lineTo(200, -60); c.lineTo(200, 60); c.fill();
+        let grd = c.createLinearGradient(0, 0, 100, 0); grd.addColorStop(0, "rgba(255,255,255,0.8)"); grd.addColorStop(1, "rgba(255,255,255,0)");
+        c.fillStyle = grd; c.beginPath(); c.moveTo(0, 0); c.lineTo(100, -30); c.lineTo(100, 30); c.fill();
         c.restore();
     }
 
@@ -626,9 +642,9 @@
 
         if(d.type==='civ') {
             c.fillStyle=d.color; c.fillRect(-6,-28,12,16); c.fillStyle=C.skin; c.fillRect(-5,-36,10,8);
-        } else if(d.type==='hero_wb') {
+        } else if(d.type==='hero_wb' || d.type==='wb') {
             c.fillStyle=C.wbBlue; c.fillRect(-6,-28,12,16); c.fillStyle='#fff'; c.fillRect(-4,-28,8,4); c.fillStyle=C.skin; c.fillRect(-5,-36,10,8); c.fillStyle='#111'; c.fillRect(-6,-38,12,4); c.fillStyle='#222'; c.fillRect(4,-22,8,6);
-        } else if(d.type==='hero_swat') {
+        } else if(d.type==='hero_swat' || d.type==='swat') {
             c.fillStyle=C.swatBlack; c.fillRect(-7,-28,14,16); c.fillStyle='#111'; c.beginPath(); c.arc(0,-32,6,0,Math.PI*2); c.fill(); c.fillStyle=C.swatRed; c.fillRect(2,-34,6,2);
             if(d.type==='hero_swat' && hero.swingTimer>0 && d.hp!==undefined) {
                 c.save(); c.translate(6, -22); c.rotate(Math.sin(hero.swingTimer)*2); c.fillStyle='#333'; c.fillRect(0,-20,3,25); c.restore();
