@@ -24,9 +24,12 @@
         }
 
         #top-ui {
-            padding: 15px; display: flex; justify-content: space-between;
-            color: #fff; text-shadow: 2px 2px 0 #000; font-size: 14px;
+            padding: 10px; display: flex; flex-direction: column; gap: 5px;
+            color: #fff; text-shadow: 2px 2px 0 #000; font-size: 10px;
+            background: rgba(0,0,0,0.3);
         }
+
+        .stat-line { display: flex; justify-content: space-between; width: 100%; }
 
         /* SCREENS */
         #start-screen, #game-over-screen {
@@ -87,8 +90,7 @@
 
     <div id="ui-layer">
         <div id="top-ui">
-            <span id="score-label">SCORE: <span id="score-val">0</span></span>
-        </div>
+            </div>
         <div id="joystick-ui"><div id="joystick-stick"></div></div>
         <div class="controls-hint">
             <div class="left-control" id="joystick-zone"></div>
@@ -108,7 +110,7 @@
                 <canvas id="p1-canvas" width="60" height="60"></canvas>
                 <div class="mode-info">
                     <div class="mode-title">WHISTLEBLOWER</div>
-                    <div class="mode-desc">Expose the truth.<br>Unstun Victims.</div>
+                    <div class="mode-desc">Expose the truth.<br>Save them.</div>
                 </div>
             </div>
             <div class="mode-card" onclick="setMode('perpetrator')">
@@ -144,7 +146,7 @@
         swatBlack: '#1e272e', swatRed: '#c0392b',
         flashColor: 'rgba(255, 255, 255, 0.85)'
     };
-    const WIRE_Y = 180; // Hard border (Lowered for bigger camp)
+    const WIRE_Y = 180; // Hard border
 
     // --- STATE ---
     let GAME_MODE = 'whistleblower';
@@ -153,7 +155,9 @@
     let score = 0;
     let cooldown = 0;
     
-    let stats = { escaped: 0, detained: 0, silenced: 0, lost: 0 };
+    // Stats
+    let stats = { escaped: 0, detained: 0, silenced: 0, exposed: 0, lost: 0 };
+
     let hero = { x: 0, y: 0, speed: 4, hp: 100, angle: -Math.PI/2, facing: 1, state: 'idle', holding: null };
     let entities = [];
     let items = [];
@@ -234,7 +238,7 @@
         
         entities = []; items = []; particles = []; smokeParticles = []; floatTexts = [];
         score = 0; frame = 0; gameActive = true;
-        stats = { escaped: 0, detained: 0, silenced: 0, lost: 0 };
+        stats = { escaped: 0, detained: 0, silenced: 0, exposed: 0, lost: 0 };
 
         if(GAME_MODE === 'perpetrator') {
             spawnEntity('swat_ally'); spawnEntity('swat_ally');
@@ -243,9 +247,23 @@
         loop();
     }
 
+    function updateStatsUI() {
+        const ui = document.getElementById('top-ui');
+        if(GAME_MODE === 'whistleblower') {
+            ui.innerHTML = `
+                <div class="stat-line"><span style="color:#0f0">ESCAPED: ${stats.escaped}</span> <span style="color:#fff">EXPOSED: ${stats.exposed}</span></div>
+            `;
+        } else {
+            ui.innerHTML = `
+                <div class="stat-line"><span style="color:#f00">SILENCED: ${stats.silenced}</span> <span style="color:#aaa">DETAINED: ${stats.detained}</span></div>
+                <div class="stat-line"><span style="color:#0f0">ESCAPED: ${stats.escaped}</span></div>
+            `;
+        }
+    }
+
     function loop() {
         if(!gameActive) return;
-        update(); draw(); frame++;
+        update(); draw(); updateStatsUI(); frame++;
         requestAnimationFrame(loop);
     }
 
@@ -285,9 +303,8 @@
             }
         }
 
-        // --- SMOKE GENERATION ---
+        // --- SMOKE ---
         if(frame % 5 === 0) {
-            // 3 Chimneys
             [canvas.width/2 - 80, canvas.width/2 + 80, canvas.width/2 + 140].forEach(x => {
                 smokeParticles.push({
                     x: x + (Math.random()-0.5)*10, y: 10,
@@ -297,17 +314,9 @@
             });
         }
 
-        // Spawn Logic (DIFFICULTY)
+        // Spawn Logic
         if(frame % 110 === 0) spawnEntity('civ');
-        
-        let rate;
-        if(GAME_MODE === 'whistleblower') {
-            // Difficulty increases with score: fast spawn, more aggro
-            rate = Math.max(30, 150 - (score * 4)); 
-        } else {
-            rate = Math.max(50, 250 - (score * 2));
-        }
-
+        let rate = GAME_MODE === 'whistleblower' ? Math.max(30, 150 - (score * 4)) : Math.max(50, 250 - (score * 2));
         if(frame % Math.floor(rate) === 0) {
             if(GAME_MODE === 'whistleblower') spawnEntity('swat_enemy');
             else spawnEntity('wb_enemy');
@@ -331,55 +340,48 @@
                 }
             }
 
-            // ENEMY SWAT (WB Mode - Aggressive)
+            // ENEMY SWAT (WB Mode - AI)
             if(e.type === 'swat' && e.team === 'enemy') {
-                let d = dist(e, hero);
-                // AI Logic: Attack Hero if close, otherwise Capture Civilians
-                let target = hero;
-                let action = 'attack';
-                
-                if(d > 200 || hero.state === 'dead') {
-                    // Hunt civilians
+                // LOGIC: Only target hero if Flash is used, otherwise catch Civs
+                let target = null;
+                let action = 'idle';
+
+                if(hero.flashTimer > 0) {
+                    target = hero;
+                    action = 'attack';
+                } else {
                     let prey = entities.find(c => c.type === 'civ' && !c.dead && !c.beingDragged && c.y > WIRE_Y);
                     if(prey) { target = prey; action = 'capture'; }
                 }
 
-                let ang = Math.atan2(target.y - e.y, target.x - e.x);
-                e.angle = ang; e.facing = Math.abs(ang) > Math.PI/2 ? -1 : 1;
-
-                let range = action === 'capture' ? 20 : 35;
-                if(dist(e, target) > range) {
-                    e.x += Math.cos(ang) * e.speed; e.y += Math.sin(ang) * e.speed; e.state = 'run';
-                } else {
-                    e.state = 'idle';
-                    if(frame % 30 === 0) {
-                        if(action === 'attack') damageHero(10);
-                        if(action === 'capture') {
-                            if(target.state !== 'stunned') {
-                                // Hit civ
-                                target.state = 'stunned'; spawnBlood(target.x, target.y);
-                            } else {
-                                // Drag civ
-                                e.holding = target; target.beingDragged = true;
-                                e.state = 'drag';
+                if(target) {
+                    let ang = Math.atan2(target.y - e.y, target.x - e.x);
+                    e.angle = ang; e.facing = Math.abs(ang) > Math.PI/2 ? -1 : 1;
+                    let range = action === 'capture' ? 20 : 35;
+                    
+                    if(dist(e, target) > range) {
+                        e.x += Math.cos(ang) * e.speed; e.y += Math.sin(ang) * e.speed; e.state = 'run';
+                    } else {
+                        e.state = 'idle';
+                        if(frame % 30 === 0) {
+                            if(action === 'attack') damageHero(10);
+                            if(action === 'capture') {
+                                if(target.state !== 'stunned') { target.state = 'stunned'; spawnBlood(target.x, target.y); }
+                                else { e.holding = target; target.beingDragged = true; e.state = 'drag'; }
                             }
                         }
                     }
                 }
                 
-                // If dragging, go to door
                 if(e.holding) {
                     let doorAng = Math.atan2(80 - e.y, canvas.width/2 - e.x);
-                    e.x += Math.cos(doorAng) * (e.speed * 0.8);
-                    e.y += Math.sin(doorAng) * (e.speed * 0.8);
+                    e.x += Math.cos(doorAng) * (e.speed * 0.8); e.y += Math.sin(doorAng) * (e.speed * 0.8);
                     e.holding.x = e.x; e.holding.y = e.y;
                     if(e.y < 120) {
                         e.holding.dead = true; e.holding = null; 
                         stats.lost++; spawnFloatText(e.x, e.y, "TAKEN", "#f00");
                     }
-                } else {
-                   if(e.y < WIRE_Y) e.y = WIRE_Y;
-                }
+                } else if(e.y < WIRE_Y) e.y = WIRE_Y;
             }
 
             // ALLY SWAT (Perp Mode)
@@ -402,7 +404,6 @@
                             e.x += Math.cos(ang) * e.speed; e.y += Math.sin(ang) * e.speed; e.state = 'run';
                         } else { e.holding = target; target.beingDragged = true; }
                     } else {
-                        // Patrol
                         let ang = Math.atan2((hero.y-50) - e.y, hero.x - e.x);
                         if(dist(e, hero) > 80) { e.x += Math.cos(ang) * e.speed; e.y += Math.sin(ang) * e.speed; e.state = 'run'; }
                         else e.state = 'idle';
@@ -410,7 +411,7 @@
                 }
             }
 
-            // ENEMY WB (Perp Mode)
+            // ENEMY WB (Perp Mode - Spawn Bottom)
             if(e.type === 'wb') {
                 let d = dist(e, hero);
                 let ang = Math.atan2(hero.y - e.y, hero.x - e.x);
@@ -419,7 +420,7 @@
                 else if(d < 150) { e.x -= Math.cos(ang)*e.speed; e.y -= Math.sin(ang)*e.speed; e.state='run'; }
                 else {
                     e.state = 'idle';
-                    if(frame % 60 === 0 && Math.random()<0.7) { // Increased firing rate
+                    if(frame % 60 === 0 && Math.random()<0.7) { 
                         e.flashTimer = 15;
                         if(Math.abs(normalizeAngle(ang - Math.atan2(hero.y-e.y, hero.x-e.x))) < 0.6) damageHero(8);
                     }
@@ -435,16 +436,22 @@
             hero.holding.beingDragged = true;
         }
 
-        // Cleanup
+        // Cleanup & Item Collision Fix
         entities = entities.filter(e => !e.dead);
+        items.forEach(i => {
+            if(!i.dead && dist(hero, i) < 40) { // Increased pickup range
+                if((GAME_MODE==='whistleblower' && i.type==='film') || (GAME_MODE==='perpetrator' && i.type==='coin')) {
+                    i.dead = true;
+                    hero.hp = Math.min(100, hero.hp + 25);
+                    spawnFloatText(hero.x, hero.y, "+HP", "#0f0");
+                }
+            }
+        });
         items = items.filter(i => !i.dead);
-        particles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life--; });
-        particles = particles.filter(p => p.life > 0);
-        smokeParticles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life--; p.size+=0.1; });
-        smokeParticles = smokeParticles.filter(p => p.life > 0);
-        floatTexts.forEach(t => { t.y-=0.5; t.life--; });
-        floatTexts = floatTexts.filter(t => t.life > 0);
-        document.getElementById('score-val').innerText = score;
+        
+        particles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life--; }); particles = particles.filter(p => p.life > 0);
+        smokeParticles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life--; p.size+=0.1; }); smokeParticles = smokeParticles.filter(p => p.life > 0);
+        floatTexts.forEach(t => { t.y-=0.5; t.life--; }); floatTexts = floatTexts.filter(t => t.life > 0);
     }
 
     // --- ACTIONS ---
@@ -454,21 +461,15 @@
 
         if(a==='flash' && cooldown<=0) {
             cooldown = 25; hero.flashTimer = 8;
-            // Unstun Civilians
             entities.forEach(t => {
-                if(t.type==='civ' && t.state==='stunned') {
-                    let diff = normalizeAngle(Math.atan2(t.y-hero.y, t.x-hero.x) - hero.angle);
-                    if(dist(hero,t)<200 && Math.abs(diff)<0.6) {
-                        t.state = 'run'; t.beingDragged = false;
-                        spawnFloatText(t.x, t.y, "FREED!", "#0f0");
+                let diff = normalizeAngle(Math.atan2(t.y-hero.y, t.x-hero.x) - hero.angle);
+                if(dist(hero,t)<200 && Math.abs(diff)<0.6) {
+                    if(t.type==='civ' && t.state==='stunned') {
+                        t.state = 'run'; t.beingDragged = false; spawnFloatText(t.x, t.y, "FREED!", "#0f0");
                     }
-                }
-                // Kill SWAT
-                if(t.type==='swat' && t.team==='enemy') {
-                    let diff = normalizeAngle(Math.atan2(t.y-hero.y, t.x-hero.x) - hero.angle);
-                    if(dist(hero,t)<200 && Math.abs(diff)<0.6) {
+                    if(t.type==='swat' && t.team==='enemy') {
                         t.dead = true; if(t.holding){t.holding.beingDragged=false; t.holding.state='run';}
-                        spawnExplosion(t.x, t.y); score++; spawnFloatText(t.x, t.y, "EXPOSED", "#fff");
+                        spawnExplosion(t.x, t.y); score++; stats.exposed++; spawnFloatText(t.x, t.y, "EXPOSED", "#fff");
                     }
                 }
             });
@@ -483,12 +484,8 @@
                     if(t.type==='civ') {
                         spawnBlood(t.x, t.y);
                         t.hits = (t.hits || 0) + 1;
-                        if(t.hits >= 3) {
-                            t.dead = true; spawnExplosion(t.x, t.y);
-                        } else {
-                            t.state = 'stunned';
-                            spawnFloatText(t.x, t.y, "STUNNED", "#ff0");
-                        }
+                        if(t.hits >= 3) { t.dead = true; spawnExplosion(t.x, t.y); } 
+                        else { t.state = 'stunned'; spawnFloatText(t.x, t.y, "STUNNED", "#ff0"); }
                     }
                 }
             });
@@ -505,17 +502,27 @@
     // --- HELPERS ---
     function spawnEntity(type) {
         let x = canvas.width/2 + (Math.random()*240-120);
-        let e = { id:Math.random(), x:x, y:WIRE_Y+10, dead:false, anim:Math.random()*10, angle:Math.PI/2, facing:1, type:type, team:'neutral' };
+        let ySpawn = WIRE_Y + 10;
+        if(type === 'wb_enemy') ySpawn = canvas.height + 10; // Spawn bottom for WBs
+
+        let e = { id:Math.random(), x:x, y:ySpawn, dead:false, anim:Math.random()*10, angle:Math.PI/2, facing:1, type:type, team:'neutral' };
+        
         if(type==='civ') { e.color=`hsl(${Math.random()*360},60%,50%)`; e.speed=1+Math.random(); e.state='run'; }
         else if(type==='swat_enemy') { e.type='swat'; e.team='enemy'; e.ai=true; e.speed=2.5 + (score/100); e.state='run'; }
         else if(type==='swat_ally') { e.type='swat'; e.team='ally'; e.ai=true; e.speed=2.5; e.state='idle'; }
         else if(type==='wb_enemy') { e.type='wb'; e.ai=true; e.speed=2.0; e.state='run'; e.flashTimer=0; e.hp=1; }
         entities.push(e);
     }
+    
     function spawnItem() {
-        let t = GAME_MODE==='whistleblower'?'battery':'coin';
-        items.push({ type:t, x:30+Math.random()*(canvas.width-60), y:160+Math.random()*(canvas.height-200), life:600, dead:false });
+        let t = GAME_MODE==='whistleblower'?'film':'coin';
+        // Fix spawn area: Between Wire + 30 and Bottom - 30
+        let minY = WIRE_Y + 30;
+        let maxY = canvas.height - 30;
+        let spawnY = minY + Math.random() * (maxY - minY);
+        items.push({ type:t, x:30+Math.random()*(canvas.width-60), y:spawnY, life:600, dead:false });
     }
+
     function spawnFloatText(x,y,t,c) { floatTexts.push({x,y,txt:t,col:c,life:60}); }
     function spawnExplosion(x,y) { for(let i=0;i<12;i++) particles.push({x,y,vx:(Math.random()-.5)*10, vy:(Math.random()-.5)*10, color:'#000', life:20, size:4}); }
     function spawnBlood(x,y) { for(let i=0;i<8;i++) particles.push({x,y,vx:(Math.random()-.5)*6, vy:(Math.random()-.5)*6, color:'#b00', life:30, size:3}); }
@@ -538,6 +545,7 @@
             document.getElementById('go-text').innerText = `Congratulations, you are now a direct perpetrator of the Uyghur genocide. You successfully detained ${stats.detained} Uyghurs. The Party thanks you. You can now continue your comfortable life and enjoy cheap products made through forced labor.`;
         } else {
             container.innerHTML += `<div class="stat-row"><span>People Escaped:</span><span>${stats.escaped}</span></div>`;
+            container.innerHTML += `<div class="stat-row"><span>Perpetrators Exposed:</span><span>${stats.exposed}</span></div>`;
             container.innerHTML += `<div class="stat-row"><span>People Lost:</span><span>${stats.lost}</span></div>`;
             document.getElementById('go-text').innerText = `Dear Whistleblower, thank you very much for exposing the Uyghur genocide to the world. Your footage has saved ${stats.escaped} lives.`;
         }
@@ -553,22 +561,12 @@
         
         // CAMP
         ctx.fillStyle = C.wall; ctx.fillRect(0,0,canvas.width, WIRE_Y);
-        // Pipes/Details
         ctx.fillStyle = '#222';
-        ctx.fillRect(canvas.width/2 - 90, 0, 20, WIRE_Y);
-        ctx.fillRect(canvas.width/2 + 70, 0, 20, WIRE_Y);
-        ctx.fillRect(canvas.width/2 + 130, 0, 20, WIRE_Y);
-        
-        // Door
+        ctx.fillRect(canvas.width/2 - 90, 0, 20, WIRE_Y); ctx.fillRect(canvas.width/2 + 70, 0, 20, WIRE_Y); ctx.fillRect(canvas.width/2 + 130, 0, 20, WIRE_Y);
         ctx.fillStyle = C.door; ctx.fillRect(canvas.width/2-40, WIRE_Y-70, 80, 70);
         
-        // Smoke
-        smokeParticles.forEach(p => {
-            ctx.fillStyle = `rgba(30,30,30,${p.life/100})`;
-            ctx.fillRect(p.x, p.y, p.size, p.size);
-        });
+        smokeParticles.forEach(p => { ctx.fillStyle = `rgba(30,30,30,${p.life/100})`; ctx.fillRect(p.x, p.y, p.size, p.size); });
 
-        // Wire
         ctx.strokeStyle = C.wire; ctx.lineWidth = 2; ctx.beginPath();
         ctx.moveTo(0, WIRE_Y-5); ctx.lineTo(canvas.width, WIRE_Y-5);
         for(let i=0; i<canvas.width; i+=20) { ctx.moveTo(i, WIRE_Y-10); ctx.lineTo(i+10, WIRE_Y); ctx.moveTo(i+10, WIRE_Y-10); ctx.lineTo(i, WIRE_Y); }
@@ -576,7 +574,14 @@
 
         items.forEach(i => {
             ctx.save(); ctx.translate(i.x, i.y);
-            if(i.type==='battery') { ctx.fillStyle='#222'; ctx.fillRect(-6,-10,12,20); ctx.fillStyle='#0f0'; ctx.fillRect(-4,-5,8,12); }
+            if(i.type==='film') { 
+                // Film Strip Graphic
+                ctx.fillStyle='#000'; ctx.fillRect(-8,-12,16,24); 
+                ctx.fillStyle='#fff'; 
+                // sprocket holes
+                for(let k=-10; k<10; k+=4) { ctx.fillRect(-7, k, 2, 2); ctx.fillRect(5, k, 2, 2); }
+                ctx.fillStyle='#555'; ctx.fillRect(-3, -12, 6, 24); // center
+            }
             else { ctx.fillStyle='#f1c40f'; ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#000'; ctx.font='10px Arial'; ctx.fillText('$',-3,4); }
             ctx.restore();
         });
