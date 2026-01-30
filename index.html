@@ -71,9 +71,14 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.5);
         }
         .game-btn:active { background: rgba(255,255,255,0.4); transform: scale(0.95); }
+        
         #btn-flash { width: 85px; height: 85px; right: 40px; bottom: 50px; background: rgba(255, 255, 255, 0.1); }
-        #btn-kick { width: 75px; height: 75px; right: 20px; bottom: 100px; background: rgba(200, 50, 50, 0.3); font-size: 20px;}
-        #btn-grab { width: 75px; height: 75px; right: 100px; bottom: 30px; background: rgba(50, 50, 200, 0.3); font-size: 20px;}
+        
+        /* Perp Buttons */
+        #btn-kick { width: 70px; height: 70px; right: 20px; bottom: 90px; background: rgba(200, 50, 50, 0.3); font-size: 20px;}
+        #btn-grab { width: 70px; height: 70px; right: 100px; bottom: 30px; background: rgba(50, 50, 200, 0.3); font-size: 20px;}
+        #btn-taser { width: 60px; height: 60px; right: 110px; bottom: 110px; background: rgba(200, 200, 0, 0.3); font-size: 24px;}
+
         .hidden { display: none !important; }
         #joystick-ui {
             position: absolute; width: 100px; height: 100px;
@@ -96,8 +101,10 @@
             <div class="left-control" id="joystick-zone"></div>
             <div class="right-control">
                 <div id="btn-flash" class="game-btn hidden" ontouchstart="doAction('flash', event)">📸</div>
+                
                 <div id="btn-kick" class="game-btn hidden" ontouchstart="doAction('kick', event)">🏏</div>
                 <div id="btn-grab" class="game-btn hidden" ontouchstart="doAction('grab', event)">✋</div>
+                <div id="btn-taser" class="game-btn hidden" ontouchstart="doAction('taser', event)">⚡</div>
             </div>
         </div>
     </div>
@@ -144,7 +151,8 @@
         wall: '#3a3f4b', wallDark: '#20232a', door: '#1a1a1a', wire: '#111',
         skin: '#f5cba7', wbBlue: '#3498db',
         swatBlack: '#1e272e', swatRed: '#c0392b',
-        flashColor: 'rgba(255, 255, 255, 0.85)'
+        flashColor: 'rgba(255, 255, 255, 0.85)',
+        taserBolt: '#ffff00'
     };
     const WIRE_Y = 180; // Hard border
 
@@ -158,12 +166,19 @@
     // Stats
     let stats = { escaped: 0, detained: 0, silenced: 0, exposed: 0, lost: 0 };
 
-    let hero = { x: 0, y: 0, speed: 4, hp: 100, angle: -Math.PI/2, facing: 1, state: 'idle', holding: null };
+    let hero = { 
+        x: 0, y: 0, speed: 4, hp: 100, 
+        angle: -Math.PI/2, facing: 1, 
+        state: 'idle', holding: null,
+        speedBoost: 0, // Timer
+    };
+    
     let entities = [];
     let items = [];
     let particles = [];
     let smokeParticles = [];
     let floatTexts = [];
+    let taserBolts = [];
     let joystick = { on: false, id: null, sx: 0, sy: 0, cx: 0, cy: 0 };
 
     // --- PORTRAITS ---
@@ -214,11 +229,12 @@
     // --- LOGIC ---
     function setMode(mode) {
         GAME_MODE = mode;
-        ['btn-flash','btn-kick','btn-grab'].forEach(id => document.getElementById(id).classList.add('hidden'));
+        ['btn-flash','btn-kick','btn-grab','btn-taser'].forEach(id => document.getElementById(id).classList.add('hidden'));
         if(mode === 'whistleblower') document.getElementById('btn-flash').classList.remove('hidden');
         else {
             document.getElementById('btn-kick').classList.remove('hidden');
             document.getElementById('btn-grab').classList.remove('hidden');
+            document.getElementById('btn-taser').classList.remove('hidden');
         }
         startGame();
     }
@@ -234,9 +250,9 @@
         document.getElementById('game-over-screen').style.display = 'none';
         
         hero.x = canvas.width/2; hero.y = canvas.height-150; hero.hp = 100;
-        hero.angle = -Math.PI/2; hero.holding = null;
+        hero.angle = -Math.PI/2; hero.holding = null; hero.speedBoost = 0;
         
-        entities = []; items = []; particles = []; smokeParticles = []; floatTexts = [];
+        entities = []; items = []; particles = []; smokeParticles = []; floatTexts = []; taserBolts = [];
         score = 0; frame = 0; gameActive = true;
         stats = { escaped: 0, detained: 0, silenced: 0, exposed: 0, lost: 0 };
 
@@ -251,7 +267,11 @@
         const ui = document.getElementById('top-ui');
         if(GAME_MODE === 'whistleblower') {
             ui.innerHTML = `
-                <div class="stat-line"><span style="color:#0f0">ESCAPED: ${stats.escaped}</span> <span style="color:#fff">EXPOSED: ${stats.exposed}</span></div>
+                <div class="stat-line">
+                    <span style="color:#0f0">ESCAPED: ${stats.escaped}</span> 
+                    <span style="color:#f00">LOST: ${stats.lost}</span>
+                </div>
+                <div class="stat-line"><span style="color:#fff">EXPOSED: ${stats.exposed}</span></div>
             `;
         } else {
             ui.innerHTML = `
@@ -271,13 +291,15 @@
         if(cooldown > 0) cooldown--;
         if(hero.flashTimer > 0) hero.flashTimer--;
         if(hero.swingTimer > 0) hero.swingTimer--;
+        if(hero.speedBoost > 0) hero.speedBoost--;
 
         // Movement
+        let activeSpeed = hero.speed * (hero.speedBoost > 0 ? 1.5 : 1);
         if(joystick.on) {
             let dx = joystick.cx - joystick.sx, dy = joystick.cy - joystick.sy;
             if(Math.hypot(dx,dy) > 10) {
                 hero.angle = Math.atan2(dy, dx);
-                let spd = hero.holding ? hero.speed * 0.5 : hero.speed;
+                let spd = hero.holding ? activeSpeed * 0.5 : activeSpeed;
                 hero.x += Math.cos(hero.angle) * spd; hero.y += Math.sin(hero.angle) * spd;
                 hero.state = 'run';
                 hero.facing = Math.abs(hero.angle) > Math.PI/2 ? -1 : 1;
@@ -325,7 +347,32 @@
             if(GAME_MODE === 'whistleblower') spawnEntity('swat_enemy');
             else spawnEntity('wb_enemy');
         }
-        if(frame % 500 === 0) spawnItem();
+        if(frame % 400 === 0) spawnItem();
+
+        // Taser Logic
+        taserBolts.forEach(b => {
+            b.x += Math.cos(b.angle)*10; b.y += Math.sin(b.angle)*10;
+            b.life--;
+            // Check Collision
+            let hit = false;
+            entities.forEach(e => {
+                if(!hit && !e.dead && (e.type==='civ' || e.type==='wb')) {
+                    if(dist(b, e) < 20) {
+                        hit = true; b.dead = true;
+                        // 1 Hit Stun, 2 Hits Kill
+                        e.taserHits = (e.taserHits || 0) + 1;
+                        if(e.taserHits >= 2) {
+                            e.dead = true; spawnExplosion(e.x, e.y);
+                            if(e.type==='wb') { score++; stats.silenced++; spawnFloatText(e.x, e.y, "SILENCED", "#f00"); }
+                            else { spawnFloatText(e.x, e.y, "FATAL", "#f00"); }
+                        } else {
+                            e.state = 'stunned'; spawnFloatText(e.x, e.y, "ZAPPED", "#ff0");
+                        }
+                    }
+                }
+            });
+        });
+        taserBolts = taserBolts.filter(b => b.life > 0 && !b.dead);
 
         // Entities Update
         entities.forEach(e => {
@@ -348,27 +395,14 @@
             if(e.type === 'swat' && e.team === 'enemy') {
                 let target = null;
                 let action = 'idle';
-
-                // LOGIC: Check both Hero and Nearest Civ. Divide attention evenly or based on distance.
                 let distToHero = dist(e, hero);
-                // Find closest civilian
                 let nearestCiv = entities.find(c => c.type === 'civ' && !c.dead && !c.beingDragged && c.y > WIRE_Y);
                 let distToCiv = nearestCiv ? dist(e, nearestCiv) : 9999;
 
-                // Decision: If Hero is very close or attacking, target Hero. Else target nearest entity.
                 if (hero.hp > 0 && (distToHero < 150 || hero.flashTimer > 0)) {
-                    // Bias towards hero if close
-                    if (!nearestCiv || distToHero < distToCiv) {
-                        target = hero;
-                        action = 'attack';
-                    } else {
-                        target = nearestCiv;
-                        action = 'capture';
-                    }
-                } else if (nearestCiv) {
-                    target = nearestCiv;
-                    action = 'capture';
-                }
+                    if (!nearestCiv || distToHero < distToCiv) { target = hero; action = 'attack'; } 
+                    else { target = nearestCiv; action = 'capture'; }
+                } else if (nearestCiv) { target = nearestCiv; action = 'capture'; }
 
                 if(target) {
                     let ang = Math.atan2(target.y - e.y, target.x - e.x);
@@ -389,7 +423,6 @@
                     }
                 }
                 
-                // Dragging Logic
                 if(e.holding) {
                     let doorAng = Math.atan2(80 - e.y, canvas.width/2 - e.x);
                     e.x += Math.cos(doorAng) * (e.speed * 0.8); e.y += Math.sin(doorAng) * (e.speed * 0.8);
@@ -430,14 +463,12 @@
 
             // ENEMY WB (Perp Mode - Spawn Bottom)
             if(e.type === 'wb') {
-                // Prevent exiting screen at top
                 if(e.y < WIRE_Y + 50) e.y = WIRE_Y + 50; 
 
                 let d = dist(e, hero);
                 let ang = Math.atan2(hero.y - e.y, hero.x - e.x);
                 e.angle = ang; e.facing = Math.abs(ang) > Math.PI/2 ? -1 : 1;
                 
-                // Aggressive/Evasive logic
                 if(d > 200) { e.x += Math.cos(ang)*e.speed; e.y += Math.sin(ang)*e.speed; e.state='run'; }
                 else if(d < 100) { e.x -= Math.cos(ang)*e.speed; e.y -= Math.sin(ang)*e.speed; e.state='run'; }
                 else {
@@ -448,7 +479,6 @@
                     }
                 }
                 
-                // Keep inside
                 if(e.x < 10) e.x = 10; if(e.x > canvas.width-10) e.x = canvas.width-10;
                 if(e.y > canvas.height) e.y = canvas.height;
                 if(e.flashTimer>0) e.flashTimer--;
@@ -464,11 +494,13 @@
         // Cleanup & Item Collision Fix
         entities = entities.filter(e => !e.dead);
         items.forEach(i => {
-            if(!i.dead && dist(hero, i) < 40) { // Increased pickup range
-                if((GAME_MODE==='whistleblower' && i.type==='film') || (GAME_MODE==='perpetrator' && i.type==='coin')) {
-                    i.dead = true;
-                    hero.hp = Math.min(100, hero.hp + 25);
-                    spawnFloatText(hero.x, hero.y, "+HP", "#0f0");
+            if(!i.dead && dist(hero, i) < 40) { 
+                if(GAME_MODE==='whistleblower' && i.type==='film') {
+                    i.dead = true; hero.hp = Math.min(100, hero.hp + 25); spawnFloatText(hero.x, hero.y, "+HP", "#0f0");
+                }
+                else if(GAME_MODE==='perpetrator') {
+                    if(i.type==='coin') { i.dead=true; hero.hp=Math.min(100,hero.hp+25); spawnFloatText(hero.x, hero.y, "+HP", "#0f0"); }
+                    if(i.type==='boot') { i.dead=true; hero.speedBoost=600; spawnFloatText(hero.x, hero.y, "SPEED", "#00f"); }
                 }
             }
         });
@@ -488,7 +520,6 @@
             cooldown = 25; hero.flashTimer = 8;
             entities.forEach(t => {
                 let diff = normalizeAngle(Math.atan2(t.y-hero.y, t.x-hero.x) - hero.angle);
-                // REDUCED CONE: dist 100, angle 0.4
                 if(dist(hero,t)<100 && Math.abs(diff)<0.4) {
                     if(t.type==='civ' && t.state==='stunned') {
                         t.state = 'run'; t.beingDragged = false; spawnFloatText(t.x, t.y, "FREED!", "#0f0");
@@ -504,11 +535,9 @@
             cooldown = 20; hero.swingTimer = 10;
             entities.forEach(t => {
                 if(dist(hero,t)<60 && !t.dead) {
-                    // Kick WB or Civ
                     if(t.type==='wb' || t.type==='civ') {
                         spawnBlood(t.x, t.y);
                         t.hits = (t.hits || 0) + 1;
-                        // 3 hits to kill
                         if(t.hits >= 3) {
                             t.dead = true; spawnExplosion(t.x, t.y);
                             if(t.type==='wb') { score++; stats.silenced++; spawnFloatText(t.x, t.y, "SILENCED", "#f00"); }
@@ -522,10 +551,13 @@
         else if(a==='grab') {
             if(hero.holding) { hero.holding.state='run'; hero.holding.beingDragged=false; hero.holding=null; }
             else {
-                // Can grab civ OR stunned WB
                 let t = entities.find(e => (e.type==='civ' || (e.type==='wb' && e.state==='stunned')) && dist(hero,e)<50 && e.y>=WIRE_Y && !e.beingDragged);
                 if(t) { hero.holding = t; spawnFloatText(hero.x, hero.y, "GRAB", "#fff"); }
             }
+        }
+        else if(a==='taser' && cooldown<=0) {
+            cooldown = 40;
+            taserBolts.push({ x:hero.x, y:hero.y, angle:hero.angle, life:30 });
         }
     }
 
@@ -533,24 +565,26 @@
     function spawnEntity(type) {
         let x = canvas.width/2 + (Math.random()*240-120);
         let ySpawn = WIRE_Y + 10;
-        if(type === 'wb_enemy') ySpawn = canvas.height + 10; // Spawn bottom for WBs
+        if(type === 'wb_enemy') ySpawn = canvas.height + 10;
 
         let e = { id:Math.random(), x:x, y:ySpawn, dead:false, anim:Math.random()*10, angle:Math.PI/2, facing:1, type:type, team:'neutral' };
         
         if(type==='civ') { e.color=`hsl(${Math.random()*360},60%,50%)`; e.speed=1+Math.random(); e.state='run'; }
         else if(type==='swat_enemy') { e.type='swat'; e.team='enemy'; e.ai=true; e.speed=2.5 + (score/100); e.state='run'; }
         else if(type==='swat_ally') { e.type='swat'; e.team='ally'; e.ai=true; e.speed=2.5; e.state='idle'; }
-        else if(type==='wb_enemy') { e.type='wb'; e.ai=true; e.speed=4.0; e.state='run'; e.flashTimer=0; e.hp=1; } // Speed 4 for WB
+        else if(type==='wb_enemy') { e.type='wb'; e.ai=true; e.speed=4.0; e.state='run'; e.flashTimer=0; e.hp=1; }
         entities.push(e);
     }
     
     function spawnItem() {
-        let t = GAME_MODE==='whistleblower'?'film':'coin';
-        // Fix spawn area: Between Wire + 30 and Bottom - 30
-        let minY = WIRE_Y + 30;
-        let maxY = canvas.height - 30;
-        let spawnY = minY + Math.random() * (maxY - minY);
-        items.push({ type:t, x:30+Math.random()*(canvas.width-60), y:spawnY, life:600, dead:false });
+        let spawnY = (WIRE_Y + 30) + Math.random() * (canvas.height - WIRE_Y - 60);
+        if(GAME_MODE === 'whistleblower') {
+            items.push({ type:'film', x:30+Math.random()*(canvas.width-60), y:spawnY, life:600, dead:false });
+        } else {
+            // Perp gets coin or boot
+            let t = Math.random() > 0.7 ? 'boot' : 'coin';
+            items.push({ type:t, x:30+Math.random()*(canvas.width-60), y:spawnY, life:600, dead:false });
+        }
     }
 
     function spawnFloatText(x,y,t,c) { floatTexts.push({x,y,txt:t,col:c,life:60}); }
@@ -605,15 +639,21 @@
         items.forEach(i => {
             ctx.save(); ctx.translate(i.x, i.y);
             if(i.type==='film') { 
-                // Film Strip Graphic
-                ctx.fillStyle='#000'; ctx.fillRect(-8,-12,16,24); 
-                ctx.fillStyle='#fff'; 
-                // sprocket holes
+                ctx.fillStyle='#000'; ctx.fillRect(-8,-12,16,24); ctx.fillStyle='#fff'; 
                 for(let k=-10; k<10; k+=4) { ctx.fillRect(-7, k, 2, 2); ctx.fillRect(5, k, 2, 2); }
-                ctx.fillStyle='#555'; ctx.fillRect(-3, -12, 6, 24); // center
+                ctx.fillStyle='#555'; ctx.fillRect(-3, -12, 6, 24);
+            }
+            else if(i.type==='boot') {
+                ctx.fillStyle='#000'; ctx.beginPath(); ctx.moveTo(-6,-8); ctx.lineTo(6,-8); ctx.lineTo(6,4); ctx.lineTo(8,4); ctx.lineTo(8,8); ctx.lineTo(-6,8); ctx.fill();
             }
             else { ctx.fillStyle='#f1c40f'; ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#000'; ctx.font='10px Arial'; ctx.fillText('$',-3,4); }
             ctx.restore();
+        });
+
+        // Taser Bolts
+        taserBolts.forEach(b => {
+            ctx.strokeStyle = C.taserBolt; ctx.lineWidth = 2; ctx.beginPath();
+            ctx.moveTo(b.x, b.y); ctx.lineTo(b.x-Math.cos(b.angle)*8, b.y-Math.sin(b.angle)*8); ctx.stroke();
         });
 
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
@@ -635,7 +675,6 @@
 
     function drawFlash(c, x, y, ang) {
         c.save(); c.translate(x, y-15); c.rotate(ang);
-        // Smaller Flash
         let grd = c.createLinearGradient(0, 0, 100, 0); grd.addColorStop(0, "rgba(255,255,255,0.8)"); grd.addColorStop(1, "rgba(255,255,255,0)");
         c.fillStyle = grd; c.beginPath(); c.moveTo(0, 0); c.lineTo(100, -30); c.lineTo(100, 30); c.fill();
         c.restore();
@@ -661,10 +700,14 @@
             c.fillStyle=C.wbBlue; c.fillRect(-6,-28,12,16); c.fillStyle='#fff'; c.fillRect(-4,-28,8,4); c.fillStyle=C.skin; c.fillRect(-5,-36,10,8); c.fillStyle='#111'; c.fillRect(-6,-38,12,4); c.fillStyle='#222'; c.fillRect(4,-22,8,6);
         } else if(d.type==='hero_swat' || d.type==='swat') {
             c.fillStyle=C.swatBlack; c.fillRect(-7,-28,14,16); c.fillStyle='#111'; c.beginPath(); c.arc(0,-32,6,0,Math.PI*2); c.fill(); c.fillStyle=C.swatRed; c.fillRect(2,-34,6,2);
-            // BATON: Draw for all SWAT
-            if(d.type==='hero_swat' && hero.swingTimer>0 && d.hp!==undefined) {
-                c.save(); c.translate(6, -22); c.rotate(Math.sin(hero.swingTimer)*2); c.fillStyle='#333'; c.fillRect(0,-20,3,25); c.restore();
-            } else { c.fillStyle='#333'; c.fillRect(4,-24,2,12); }
+            // Arm with Bat
+            c.save(); c.translate(6, -24); 
+            if(d.type==='hero_swat' && hero.swingTimer>0 && d.hp!==undefined) c.rotate(Math.sin(hero.swingTimer)*2);
+            // Arm
+            c.fillStyle='#111'; c.fillRect(-2,-2,4,8);
+            // Bat
+            c.fillStyle='#444'; c.fillRect(-1,0,3,-20);
+            c.restore();
         }
         c.restore();
     }
