@@ -106,7 +106,7 @@ h1{font-size:24px;color:#ffcc00;margin-bottom:5px;text-shadow:4px 4px 0 #8b0000;
       <div id="btn-flash" class="game-btn hidden" ontouchstart="doAction('flash',event)">📸<span class="btn-sub">EXPOSE</span></div>
       <div id="btn-kick"  class="game-btn hidden" ontouchstart="doAction('kick',event)">🏏<span class="btn-sub">BATON</span></div>
       <div id="btn-grab"  class="game-btn hidden" ontouchstart="doAction('grab',event)">✋<span class="btn-sub">GRAB</span></div>
-      <div id="btn-taser" class="game-btn hidden" ontouchstart="doAction('taser',event)">⚡<span class="btn-sub">TASER</span></div>
+      <div id="btn-taser" class="game-btn hidden" ontouchstart="taserDown(event)" ontouchend="taserUp(event)" ontouchcancel="taserUp(event)">⚡<span class="btn-sub">TASER</span></div>
     </div>
   </div>
 </div>
@@ -523,6 +523,7 @@ let hero={
 
 let entities=[],items=[],particles=[],floatTexts=[],taserBolts=[],smokeParticles=[],bloodSplats=[],obstacles=[];
 let entityIdCtr=0;
+let taserHeld=false, taserFireTimer=0;
 
 let joystick={on:false,id:null,sx:0,sy:0,cx:0,cy:0};
 
@@ -566,8 +567,11 @@ joyZone.addEventListener('touchmove',e=>{
 
 // Keyboard
 const keys={};
-window.addEventListener('keydown',e=>{ keys[e.key]=true; if(e.key===' ') doAction(GAME_MODE==='whistleblower'?'flash':'kick'); if(e.key==='e'||e.key==='E') doAction('grab'); if(e.key==='q'||e.key==='Q') doAction('taser'); });
-window.addEventListener('keyup',e=>{ keys[e.key]=false; });
+window.addEventListener('keydown',e=>{ keys[e.key]=true; if(e.key===' ') doAction(GAME_MODE==='whistleblower'?'flash':'kick'); if(e.key==='e'||e.key==='E') doAction('grab'); if(e.key==='q'||e.key==='Q') taserHeld=true; });
+window.addEventListener('keyup',e=>{ keys[e.key]=false; if(e.key==='q'||e.key==='Q') taserHeld=false; });
+
+function taserDown(ev){ if(ev){ev.preventDefault();ev.stopPropagation();} taserHeld=true; }
+function taserUp(ev)  { if(ev){ev.preventDefault();ev.stopPropagation();} taserHeld=false; }
 
 // ─────────────────────────────────────────────
 // OBSTACLES
@@ -590,17 +594,18 @@ function genObstacles(){
 
 function obstacleBlock(nx,ny,r=10){
   for(const o of obstacles){
-    if(nx>o.x-r&&nx<o.x+o.w+r&&ny>o.y-r&&ny<o.y+o.h+r){
-      return true;
-    }
+    if(nx>o.x-r&&nx<o.x+o.w+r&&ny>o.y-r&&ny<o.y+o.h+r) return true;
   }
   return false;
 }
 function slideObstacle(ent,mx,my,r=10){
-  let nx=ent.x+mx, ny=ent.y+my;
-  if(!obstacleBlock(nx,ent.y,r)) return {x:nx,y:ent.y};
-  if(!obstacleBlock(ent.x,ny,r)) return {x:ent.x,y:ny};
-  return {x:ent.x,y:ent.y};
+  // Try full move first
+  if(!obstacleBlock(ent.x+mx, ent.y+my, r)) return {x:ent.x+mx, y:ent.y+my};
+  // Try X only
+  if(!obstacleBlock(ent.x+mx, ent.y, r)) return {x:ent.x+mx, y:ent.y};
+  // Try Y only
+  if(!obstacleBlock(ent.x, ent.y+my, r)) return {x:ent.x, y:ent.y+my};
+  return {x:ent.x, y:ent.y};
 }
 
 // ─────────────────────────────────────────────
@@ -630,6 +635,7 @@ function startGame(){
   score=0; frame=0; wave=1; waveTimer=0; comboCount=0; comboTimer=0;
   stats={escaped:0,detained:0,silenced:0,exposed:0,lost:0};
   cooldowns={flash:0,kick:0,taser:0};
+  taserHeld=false; taserFireTimer=0;
   genObstacles();
   if(GAME_MODE==='perpetrator'){ spawnEntity('swat_ally'); spawnEntity('swat_ally'); }
   announceWave(1);
@@ -709,21 +715,20 @@ function update(){
     const res=slideObstacle(hero,mx,my,13);
     hero.x=res.x; hero.y=res.y;
   }
+  // Free movement across entire canvas
   hero.x=Math.max(18,Math.min(canvas.width-18,hero.x));
-  hero.y=Math.min(canvas.height-18,hero.y);
+  hero.y=Math.max(18,Math.min(canvas.height-18,hero.y));
 
-  if(GAME_MODE==='whistleblower'){
-    if(hero.y<WIRE_Y) hero.y=WIRE_Y;
-  } else {
-    if(hero.holding&&Math.abs(hero.x-canvas.width/2)<65){
-      if(hero.y<125){
-        sfx.score(); score++;
-        if(hero.holding.type==='civ') stats.detained++;
-        else if(hero.holding.type==='wb') stats.silenced++;
-        addCombo(); spawnFT(hero.x,hero.y,hero.holding.type==='wb'?"SILENCED":"DETAINED",hero.holding.type==='wb'?"#ff4444":"#fff");
-        hero.holding.dead=true; hero.holding=null; hero.y=WIRE_Y+15; shake(5);
-      }
-    } else if(hero.y<WIRE_Y) hero.y=WIRE_Y;
+  // Perpetrator: walking captive into gate area detains them
+  if(GAME_MODE==='perpetrator'){
+    if(hero.holding&&Math.abs(hero.x-canvas.width/2)<65&&hero.y<125){
+      sfx.score(); score++;
+      if(hero.holding.type==='civ') stats.detained++;
+      else if(hero.holding.type==='wb') stats.silenced++;
+      addCombo();
+      spawnFT(hero.x,hero.y,hero.holding.type==='wb'?"SILENCED":"DETAINED",hero.holding.type==='wb'?"#ff4444":"#fff");
+      hero.holding.dead=true; hero.holding=null; shake(5);
+    }
   }
 
   // ── Smoke ──
@@ -741,6 +746,22 @@ function update(){
   if(frame%420===0) spawnItem();
   if(waveTimer>=1100+wave*280){ wave++; waveTimer=0; genObstacles(); announceWave(wave); if(GAME_MODE==='perpetrator') spawnEntity('swat_ally'); }
   waveTimer++;
+
+  // ── Taser held-fire ──
+  if(taserHeld && GAME_MODE==='perpetrator' && gameActive && !waveShowing){
+    taserFireTimer--;
+    if(taserFireTimer<=0){
+      taserFireTimer=8;
+      if(hero.stamina>=5){
+        hero.stamina-=5;
+        const ang = joystick.on ? Math.atan2(joystick.cy-joystick.sy, joystick.cx-joystick.sx) : hero.angle;
+        taserBolts.push({x:hero.x, y:hero.y, angle:ang, life:28});
+        sfx.taser();
+      }
+    }
+  } else {
+    taserFireTimer=0;
+  }
 
   // ── Taser bolts ──
   taserBolts.forEach(b=>{
@@ -853,12 +874,7 @@ function doAction(a,ev){
   }
   else if(a==='grab'){
     if(hero.holding){hero.holding.state='run';hero.holding.beingDragged=false;hero.holding.stunTimer=0;hero.holding=null;}
-    else{const t=entities.find(e=>(e.type==='civ'||(e.type==='wb'&&e.state==='stunned'))&&dist(hero,e)<52&&e.y>=WIRE_Y&&!e.beingDragged);if(t){hero.holding=t;spawnFT(hero.x,hero.y,"GRAB","#fff");}}
-  }
-  else if(a==='taser'&&cooldowns.taser<=0){
-    if(hero.stamina<25){spawnFT(hero.x,hero.y,"LOW STAMINA","#f88");return;}
-    hero.stamina-=25; cooldowns.taser=38; sfx.taser();
-    taserBolts.push({x:hero.x,y:hero.y,angle:hero.angle,life:32});
+    else{const t=entities.find(e=>(e.type==='civ'||(e.type==='wb'&&e.state==='stunned'))&&dist(hero,e)<52&&!e.beingDragged);if(t){hero.holding=t;spawnFT(hero.x,hero.y,"GRAB","#fff");}}
   }
 }
 
