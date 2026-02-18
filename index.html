@@ -69,10 +69,11 @@ h1{font-size:24px;color:#ffcc00;margin-bottom:5px;text-shadow:4px 4px 0 #8b0000;
 
 /* Single flash btn for WB mode */
 #btn-flash{width:85px;height:85px;right:35px;bottom:60px;border-color:rgba(80,200,255,0.9);}
-/* Perp mode buttons */
-#btn-kick {width:72px;height:72px;right:12px;bottom:100px;border-color:rgba(255,80,80,0.9);}
-#btn-grab {width:72px;height:72px;right:95px;bottom:30px; border-color:rgba(80,160,255,0.9);}
-#btn-taser{width:62px;height:62px;right:100px;bottom:118px;border-color:rgba(255,230,40,0.9);}
+/* Taser aim-stick: displays direction indicator */
+#btn-taser{width:80px;height:80px;right:15px;bottom:110px;border-color:rgba(255,230,40,0.9);position:absolute;}
+#taser-aim{position:absolute;top:50%;left:50%;width:28px;height:4px;background:rgba(255,230,40,0.85);border-radius:2px;transform-origin:left center;transform:translateY(-50%);pointer-events:none;box-shadow:0 0 6px #ffe800;}
+/* Net button */
+#btn-net{width:68px;height:68px;right:105px;bottom:28px;border-color:rgba(0,240,120,0.9);position:absolute;}
 
 /* Joystick visual */
 #joystick-ui{position:absolute;width:100px;height:100px;border:2px solid rgba(255,255,255,0.25);border-radius:50%;display:none;pointer-events:none;background:rgba(255,255,255,0.04);}
@@ -106,7 +107,8 @@ h1{font-size:24px;color:#ffcc00;margin-bottom:5px;text-shadow:4px 4px 0 #8b0000;
       <div id="btn-flash" class="game-btn hidden" ontouchstart="doAction('flash',event)">📸<span class="btn-sub">EXPOSE</span></div>
       <div id="btn-kick"  class="game-btn hidden" ontouchstart="doAction('kick',event)">🏏<span class="btn-sub">BATON</span></div>
       <div id="btn-grab"  class="game-btn hidden" ontouchstart="doAction('grab',event)">✋<span class="btn-sub">GRAB</span></div>
-      <div id="btn-taser" class="game-btn hidden" ontouchstart="taserDown(event)" ontouchend="taserUp(event)" ontouchcancel="taserUp(event)">⚡<span class="btn-sub">TASER</span></div>
+      <div id="btn-taser" class="game-btn hidden"><div id="taser-aim"></div>⚡<span class="btn-sub">TASER</span></div>
+      <div id="btn-net"   class="game-btn hidden" ontouchstart="doAction('net',event)">🕸️<span class="btn-sub" id="net-charges-lbl">NET 0</span></div>
     </div>
   </div>
 </div>
@@ -523,7 +525,9 @@ let hero={
 
 let entities=[],items=[],particles=[],floatTexts=[],taserBolts=[],smokeParticles=[],bloodSplats=[],obstacles=[];
 let entityIdCtr=0;
-let taserHeld=false, taserFireTimer=0;
+let taserHeld=false, taserFireTimer=0, taserAimAngle=0;
+let taserBtnTouch={id:null, sx:0, sy:0}; // tracks the touch on taser button for aim
+let netCharges=0, netProjectiles=[]; // net weapon
 
 let joystick={on:false,id:null,sx:0,sy:0,cx:0,cy:0};
 
@@ -573,6 +577,41 @@ window.addEventListener('keyup',e=>{ keys[e.key]=false; if(e.key==='q'||e.key===
 function taserDown(ev){ if(ev){ev.preventDefault();ev.stopPropagation();} taserHeld=true; }
 function taserUp(ev)  { if(ev){ev.preventDefault();ev.stopPropagation();} taserHeld=false; }
 
+// Taser button = aim stick: touchstart/move/end on btn-taser
+(function(){
+  const btn = document.getElementById('btn-taser');
+  const aimEl = document.getElementById('taser-aim');
+  function updateAim(dx, dy){
+    const d = Math.hypot(dx,dy);
+    if(d > 5){
+      taserAimAngle = Math.atan2(dy, dx);
+      hero.angle = taserAimAngle;
+      hero.facing = Math.abs(taserAimAngle) > Math.PI/2 ? -1 : 1;
+    }
+    // Rotate the aim indicator
+    aimEl.style.transform = `translateY(-50%) rotate(${taserAimAngle}rad)`;
+  }
+  btn.addEventListener('touchstart', e=>{
+    e.preventDefault(); e.stopPropagation();
+    taserHeld = true;
+    const t = e.changedTouches[0];
+    taserBtnTouch = {id:t.identifier, sx:t.clientX, sy:t.clientY};
+  },{passive:false});
+  btn.addEventListener('touchmove', e=>{
+    e.preventDefault(); e.stopPropagation();
+    for(const t of e.changedTouches){
+      if(t.identifier === taserBtnTouch.id){
+        updateAim(t.clientX - taserBtnTouch.sx, t.clientY - taserBtnTouch.sy);
+      }
+    }
+  },{passive:false});
+  ['touchend','touchcancel'].forEach(ev=>btn.addEventListener(ev, e=>{
+    e.preventDefault(); e.stopPropagation();
+    taserHeld = false;
+    taserBtnTouch = {id:null, sx:0, sy:0};
+  },{passive:false}));
+})();
+
 // ─────────────────────────────────────────────
 // OBSTACLES
 // ─────────────────────────────────────────────
@@ -613,9 +652,14 @@ function slideObstacle(ent,mx,my,r=10){
 // ─────────────────────────────────────────────
 function setMode(mode){
   GAME_MODE=mode;
-  ['btn-flash','btn-kick','btn-grab','btn-taser'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+  ['btn-flash','btn-kick','btn-grab','btn-taser','btn-net'].forEach(id=>document.getElementById(id).classList.add('hidden'));
   if(mode==='whistleblower') document.getElementById('btn-flash').classList.remove('hidden');
-  else { document.getElementById('btn-kick').classList.remove('hidden'); document.getElementById('btn-grab').classList.remove('hidden'); document.getElementById('btn-taser').classList.remove('hidden'); }
+  else {
+    document.getElementById('btn-kick').classList.remove('hidden');
+    document.getElementById('btn-grab').classList.remove('hidden');
+    document.getElementById('btn-taser').classList.remove('hidden');
+    document.getElementById('btn-net').classList.remove('hidden');
+  }
   startGame();
 }
 
@@ -635,7 +679,8 @@ function startGame(){
   score=0; frame=0; wave=1; waveTimer=0; comboCount=0; comboTimer=0;
   stats={escaped:0,detained:0,silenced:0,exposed:0,lost:0};
   cooldowns={flash:0,kick:0,taser:0};
-  taserHeld=false; taserFireTimer=0;
+  taserHeld=false; taserFireTimer=0; taserAimAngle=-Math.PI/2;
+  netCharges=0; netProjectiles=[];
   genObstacles();
   if(GAME_MODE==='perpetrator'){ spawnEntity('swat_ally'); spawnEntity('swat_ally'); }
   announceWave(1);
@@ -747,20 +792,21 @@ function update(){
   if(waveTimer>=1100+wave*280){ wave++; waveTimer=0; genObstacles(); announceWave(wave); if(GAME_MODE==='perpetrator') spawnEntity('swat_ally'); }
   waveTimer++;
 
-  // ── Taser held-fire ──
+  // ── Taser held-fire (aim-stick direction) ──
   if(taserHeld && GAME_MODE==='perpetrator' && gameActive && !waveShowing){
     taserFireTimer--;
     if(taserFireTimer<=0){
-      taserFireTimer=8;
-      if(hero.stamina>=5){
-        hero.stamina-=5;
-        const ang = joystick.on ? Math.atan2(joystick.cy-joystick.sy, joystick.cx-joystick.sx) : hero.angle;
-        taserBolts.push({x:hero.x, y:hero.y, angle:ang, life:28});
+      taserFireTimer=6;
+      if(hero.stamina>=4){
+        hero.stamina-=4;
+        // Use aim-stick angle if player is actively aiming, else last hero angle
+        const firingAngle = taserAimAngle !== undefined ? taserAimAngle : hero.angle;
+        taserBolts.push({x:hero.x, y:hero.y, angle:firingAngle, life:30});
         sfx.taser();
       }
     }
   } else {
-    taserFireTimer=0;
+    if(!taserHeld) taserFireTimer=0;
   }
 
   // ── Taser bolts ──
@@ -775,6 +821,42 @@ function update(){
     });
   });
   taserBolts=taserBolts.filter(b=>b.life>0&&!b.dead);
+
+  // ── Net projectiles ──
+  netProjectiles.forEach(n=>{
+    n.life--;
+    // Travel phase (first 15 frames): move forward
+    if(n.life > 30){
+      n.x += Math.cos(n.angle)*7;
+      n.y += Math.sin(n.angle)*7;
+    }
+    n.radius += 3.5;
+    if(n.radius > n.maxRadius) n.radius = n.maxRadius;
+    // Catch entities within net radius (up to 3)
+    if(n.caught < 3){
+      entities.forEach(e=>{
+        if(!e.dead && !e.netCaught && n.caught < 3 &&
+           (e.type==='civ'||e.type==='wb') &&
+           dist(n, e) < n.radius){
+          e.netCaught = true;
+          e.state = 'stunned';
+          e.stunTimer = 180;
+          n.caught++;
+          spawnFT(e.x, e.y, 'NETTED!', '#00ff88');
+          sfx.free();
+        }
+      });
+    }
+  });
+  netProjectiles = netProjectiles.filter(n=>n.life>0);
+
+  // Update net charges label
+  if(GAME_MODE==='perpetrator'){
+    const nl = document.getElementById('net-charges-lbl');
+    if(nl) nl.textContent = 'NET '+netCharges;
+    const nb = document.getElementById('btn-net');
+    if(nb) nb.style.opacity = netCharges>0?'1':'0.35';
+  }
 
   // ── Entities ──
   entities.forEach(e=>{ if(e.dead) return; if(e.stunTimer>0){e.stunTimer--;if(e.stunTimer===0&&e.state==='stunned')e.state='run';} updateEntity(e); });
@@ -813,16 +895,37 @@ function updateEntity(e){
   }
   if(e.type==='swat'&&e.team==='enemy'){
     const dh=dist(e,hero);
-    let nc=entities.find(c=>c.type==='civ'&&!c.dead&&!c.beingDragged&&c.y>WIRE_Y);
-    let dc=nc?dist(e,nc):9999;
-    let tgt=null,act='idle';
-    if(hero.hp>0&&dh<165){if(!nc||dh<dc){tgt=hero;act='attack';}else{tgt=nc;act='capture';}}
-    else if(nc){tgt=nc;act='capture';}
+    // Find nearest civ (running OR stunned, not already being dragged)
+    let nc=null, dcBest=9999;
+    entities.forEach(c=>{
+      if(c.type==='civ'&&!c.dead&&!c.beingDragged&&(c.state==='run'||c.state==='stunned')){
+        const dc=dist(e,c); if(dc<dcBest){dcBest=dc;nc=c;}
+      }
+    });
+    let tgt=null, act='idle';
+    // If hero is close, split attention: 40% attack hero, 60% capture civ
+    if(hero.hp>0 && dh<160){
+      if(!nc || (Math.random()<0.4 && dh<120)){tgt=hero;act='attack';}
+      else{tgt=nc;act='capture';}
+    } else if(nc){tgt=nc;act='capture';}
     if(tgt){
       const ang=Math.atan2(tgt.y-e.y,tgt.x-e.x); e.angle=ang; e.facing=Math.abs(ang)>Math.PI/2?-1:1;
       const rng=act==='capture'?22:38;
       if(dist(e,tgt)>rng){const res=slideObstacle(e,Math.cos(ang)*e.speed,Math.sin(ang)*e.speed);e.x=res.x;e.y=res.y;e.state='run';}
-      else{ e.state='idle'; if(frame%32===0){ if(act==='attack') damageHero(8+wave); if(act==='capture'){ if(tgt.state!=='stunned'){tgt.state='stunned';tgt.stunTimer=110;spawnBlood(tgt.x,tgt.y);}else{e.holding=tgt;tgt.beingDragged=true;}}}}
+      else{
+        e.state='idle';
+        if(frame%32===0){
+          if(act==='attack') damageHero(8+wave);
+          if(act==='capture'){
+            if(tgt.state==='run'){
+              // Chase and tackle running civ
+              tgt.state='stunned'; tgt.stunTimer=90; spawnBlood(tgt.x,tgt.y);
+            } else if(tgt.state==='stunned'){
+              e.holding=tgt; tgt.beingDragged=true;
+            }
+          }
+        }
+      }
     }
     if(e.holding){ const ang=Math.atan2(80-e.y,canvas.width/2-e.x); e.x+=Math.cos(ang)*e.speed*.9; e.y+=Math.sin(ang)*e.speed*.9; e.holding.x=e.x;e.holding.y=e.y; if(e.y<125){e.holding.dead=true;e.holding=null;stats.lost++;sfx.death();shake(5);spawnFT(e.x,e.y,"TAKEN","#f44");} }
     else if(e.y<WIRE_Y) e.y=WIRE_Y;
@@ -876,6 +979,22 @@ function doAction(a,ev){
     if(hero.holding){hero.holding.state='run';hero.holding.beingDragged=false;hero.holding.stunTimer=0;hero.holding=null;}
     else{const t=entities.find(e=>(e.type==='civ'||(e.type==='wb'&&e.state==='stunned'))&&dist(hero,e)<52&&!e.beingDragged);if(t){hero.holding=t;spawnFT(hero.x,hero.y,"GRAB","#fff");}}
   }
+  else if(a==='net'){
+    if(netCharges<=0){ spawnFT(hero.x,hero.y,"NO NET","#f88"); return; }
+    netCharges--;
+    const ang = taserAimAngle !== undefined ? taserAimAngle : hero.angle;
+    netProjectiles.push({
+      x: hero.x + Math.cos(ang)*20,
+      y: hero.y + Math.sin(ang)*20,
+      angle: ang,
+      radius: 8,
+      maxRadius: 80,
+      caught: 0,
+      life: 45,
+    });
+    playTone(200,'sine',0.3,0.2,0.3); playNoise(0.15,0.1);
+    shake(2);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -884,7 +1003,7 @@ function doAction(a,ev){
 function spawnEntity(type){
   let x=canvas.width/2+(Math.random()*280-140), y=WIRE_Y+8;
   if(type==='wb_enemy') y=canvas.height+8;
-  const e={id:entityIdCtr++,x,y,dead:false,anim:Math.random()*10,angle:Math.PI/2,facing:1,type,team:'neutral',state:'run',stunTimer:0,hits:0,taserHits:0,beingDragged:false,holding:null,flashTimer:0};
+  const e={id:entityIdCtr++,x,y,dead:false,anim:Math.random()*10,angle:Math.PI/2,facing:1,type,team:'neutral',state:'run',stunTimer:0,hits:0,taserHits:0,beingDragged:false,holding:null,flashTimer:0,netCaught:false};
   if(type==='civ'){e.civVar=Math.floor(Math.random()*CIV_VARIANTS.length);e.speed=0.9+Math.random()*0.75;}
   else if(type==='swat_enemy'){e.type='swat';e.team='enemy';e.speed=2.1+wave*0.14+Math.random()*0.4;}
   else if(type==='swat_ally'){e.type='swat';e.team='ally';e.speed=2.3;}
@@ -896,13 +1015,26 @@ function spawnItem(){
   const y=WIRE_Y+40+Math.random()*(canvas.height-WIRE_Y-80);
   const x=40+Math.random()*(canvas.width-80);
   if(GAME_MODE==='whistleblower') items.push({type:'film',x,y,life:700,dead:false});
-  else{ const ts=['medkit','medkit','boot'];items.push({type:ts[Math.floor(Math.random()*ts.length)],x,y,life:700,dead:false}); }
+  else{
+    // Flask/net spawns more frequently at lower charges
+    const r = Math.random();
+    let type;
+    if(r < (netCharges<5 ? 0.45 : 0.2)) type='net_flask';
+    else if(r < 0.65) type='medkit';
+    else type='boot';
+    items.push({type,x,y,life:700,dead:false});
+  }
 }
 
 function applyItem(i){
   if(i.type==='film'&&GAME_MODE==='whistleblower'){hero.hp=Math.min(hero.maxHp,hero.hp+30);sfx.free();spawnFT(hero.x,hero.y,"+EVIDENCE","#0f0");}
   else if(i.type==='medkit'){hero.hp=Math.min(hero.maxHp,hero.hp+35);sfx.free();spawnFT(hero.x,hero.y,"+35 HP","#0f0");}
   else if(i.type==='boot'){hero.speedBoost=400;sfx.free();spawnFT(hero.x,hero.y,"SPEED!","#44f");}
+  else if(i.type==='net_flask'){
+    netCharges=Math.min(10,netCharges+10);
+    playTone(440,'sine',0.05); setTimeout(()=>playTone(660,'sine',0.1,0.1),60);
+    spawnFT(hero.x,hero.y,"NET x10!","#00ff88");
+  }
 }
 
 function addCombo(){ comboCount++; comboTimer=120; if(comboCount>1){ const cl=document.getElementById('combo-lbl'); cl.style.display='block'; cl.textContent='x'+comboCount+' COMBO!'; } score+=Math.max(0,comboCount-1); }
@@ -982,6 +1114,34 @@ function draw(){
     ctx.strokeStyle='#ffe800'; ctx.lineWidth=2; ctx.shadowColor='#ffe800'; ctx.shadowBlur=8;
     ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(b.x-Math.cos(b.angle)*10,b.y-Math.sin(b.angle)*10); ctx.stroke();
     ctx.shadowBlur=0;
+  });
+
+  // Net projectiles
+  netProjectiles.forEach(n=>{
+    const alpha = n.life/45;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.75;
+    // Draw expanding net
+    const step = Math.PI/6;
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 6;
+    // Radial lines
+    for(let a=0; a<Math.PI*2; a+=step){
+      ctx.beginPath();
+      ctx.moveTo(n.x, n.y);
+      ctx.lineTo(n.x + Math.cos(a)*n.radius, n.y + Math.sin(a)*n.radius);
+      ctx.stroke();
+    }
+    // Concentric rings
+    [0.33, 0.66, 1.0].forEach(f=>{
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius*f, 0, Math.PI*2);
+      ctx.stroke();
+    });
+    ctx.shadowBlur=0;
+    ctx.restore();
   });
 
   // Shadows
@@ -1102,6 +1262,25 @@ function drawItems(){
     } else if(i.type==='boot'){
       ctx.fillStyle='#222'; ctx.beginPath(); ctx.moveTo(-5,-7); ctx.lineTo(5,-7); ctx.lineTo(5,3); ctx.lineTo(7,3); ctx.lineTo(7,7); ctx.lineTo(-5,7); ctx.fill();
       ctx.fillStyle='#555'; ctx.fillRect(-4,-6,8,3);
+    } else if(i.type==='net_flask'){
+      // Flask body
+      ctx.fillStyle='#1a3a2a'; ctx.fillRect(-5,-10,10,14);
+      ctx.fillStyle='#00ff88'; ctx.globalAlpha=0.5+Math.sin(frame*.1)*.2;
+      ctx.fillRect(-4,-9,8,12);
+      ctx.globalAlpha=1;
+      // Cork
+      ctx.fillStyle='#8b6914'; ctx.fillRect(-3,-12,6,4);
+      // Net pattern on flask
+      ctx.strokeStyle='#00aa55'; ctx.lineWidth=0.8;
+      for(let fy=-8;fy<4;fy+=4){ ctx.beginPath(); ctx.moveTo(-4,fy); ctx.lineTo(4,fy); ctx.stroke(); }
+      for(let fx=-2;fx<5;fx+=3){ ctx.beginPath(); ctx.moveTo(fx,-9); ctx.lineTo(fx,3); ctx.stroke(); }
+      // Glow
+      ctx.shadowColor='#00ff88'; ctx.shadowBlur=8+Math.sin(frame*.1)*4;
+      ctx.strokeStyle='#00ff88'; ctx.lineWidth=1; ctx.strokeRect(-5,-12,10,18);
+      ctx.shadowBlur=0;
+      // Label
+      ctx.fillStyle='#00ff88'; ctx.font=`5px 'Press Start 2P',monospace`; ctx.textAlign='center';
+      ctx.fillText('NET',0,16);
     }
     ctx.shadowBlur=0; ctx.restore();
   });
